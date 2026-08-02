@@ -1,0 +1,26 @@
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.vercel
+frontend/build
+
+# Python / Virtual Environment
+backend/.venv/
+backend/__pycache__/
+__pycache__/
+*.py[cod]
+*$py.class
+backend/*.db
+
+# Environment & IDE
+.env
+.env.local
+.env.*.local
+.vscode/
+.idea/
+.DS_Store
+*.log
+firebase-key.json
+backend/firebase-key.json
+*-firebase-adminsdk-*.json
