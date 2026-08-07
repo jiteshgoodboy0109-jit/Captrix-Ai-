@@ -20,10 +20,11 @@ def extract_company_name(filename: str, user_provided_name: str) -> str:
     if user_provided_name and user_provided_name.strip() and user_provided_name.strip() not in ["Target Corporation", "Enterprise Company", "Acme Corporation"]:
         return user_provided_name.strip()
 
-    # Auto-extract from filename (e.g. Tesla_Q4_Financials.xlsx -> Tesla Q4)
+    # Auto-extract from filename (e.g. Tesla_Q4_Financials.pdf -> Tesla Q4)
     base = os.path.splitext(filename)[0]
     cleaned = base.replace("_", " ").replace("-", " ")
-    words = [w.capitalize() for w in cleaned.split() if w.lower() not in ["financials", "financial", "statement", "statements", "tb", "ledger", "2024", "2025", "2026", "v1", "v2", "final", "excel", "sheet"]]
+    blacklist = ["financials", "financial", "statement", "statements", "tb", "ledger", "2024", "2025", "2026", "v1", "v2", "final", "excel", "sheet", "pdf", "docx", "doc", "csv", "txt", "json", "word", "report"]
+    words = [w.capitalize() for w in cleaned.split() if w.lower() not in blacklist]
     if words:
         return " ".join(words)
     return cleaned.title() or "Enterprise Target Entity"
@@ -45,20 +46,21 @@ async def upload_financial_file(
             raise HTTPException(status_code=400, detail="File size exceeds maximum 25MB limit.")
 
         # Auto-detect or sanitize company name
-        final_company_name = extract_company_name(file.filename, company_name or "")
+        filename = file.filename or "uploaded_document"
+        final_company_name = extract_company_name(filename, company_name or "")
 
         # Save raw file locally
-        saved_path = os.path.join(UPLOAD_DIR, f"{current_user.id}_{file.filename}")
+        saved_path = os.path.join(UPLOAD_DIR, f"{current_user.id}_{filename}")
         with open(saved_path, "wb") as f:
             f.write(file_bytes)
 
         # 1. AI Document Engine: Parse workbook
-        parsed = parse_workbook(file_bytes, file.filename)
+        parsed = parse_workbook(file_bytes, filename)
         sheet_names = parsed.get("sheet_names", [])
         items = parsed.get("normalized_items", [])
 
         if not items:
-            raise HTTPException(status_code=400, detail="Could not extract valid financial data lines from workbook.")
+            raise HTTPException(status_code=400, detail="Could not extract valid financial data lines from document.")
 
         # 2. Company record
         company = Company(name=final_company_name, industry="Enterprise Accounting", currency="USD")

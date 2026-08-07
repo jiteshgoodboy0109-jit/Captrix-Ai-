@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/reports", tags=["Report Download Engine"])
 
 def fetch_upload_payload(upload_id: int, db: Session, current_user: User):
     upload = db.query(Upload).filter(Upload.id == upload_id).first()
-    if not upload:
+    if not upload or upload.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Upload analysis not found.")
 
     company = db.query(Company).filter(Company.id == upload.company_id).first()

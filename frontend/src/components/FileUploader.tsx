@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
-import { UploadCloud, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, Building } from 'lucide-react';
+import { UploadCloud, FileSpreadsheet, FileText, AlertCircle, CheckCircle2, Loader2, Building } from 'lucide-react';
 
 interface FileUploaderProps {
   onSuccess?: (uploadId: number) => void;
@@ -43,7 +43,7 @@ export default function FileUploader({ onSuccess }: FileUploaderProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
-      setError('Please select an accounting Excel or CSV workbook first.');
+      setError('Please select a financial document (PDF, Excel, Word, CSV, TXT, JSON) first.');
       return;
     }
 
@@ -79,6 +79,8 @@ export default function FileUploader({ onSuccess }: FileUploaderProps) {
     }
   };
 
+  const isSpreadsheet = file && /\.(xlsx|xls|csv)$/i.test(file.name);
+
   return (
     <div className="glass-card rounded-2xl p-6 shadow-sm border border-slate-200">
       <div className="flex items-center gap-3 mb-4">
@@ -86,8 +88,8 @@ export default function FileUploader({ onSuccess }: FileUploaderProps) {
           <UploadCloud className="w-5 h-5" />
         </div>
         <div>
-          <h3 className="text-base font-bold text-slate-900">Upload Financial Workbook</h3>
-          <p className="text-xs text-slate-500">AI automatically detects sheets, Dr/Cr balances, statements, & ratios</p>
+          <h3 className="text-base font-bold text-slate-900">Upload Financial Document</h3>
+          <p className="text-xs text-slate-500">AI extracts sheets, text tables, Dr/Cr balances, statements, & ratios</p>
         </div>
       </div>
 
@@ -122,26 +124,30 @@ export default function FileUploader({ onSuccess }: FileUploaderProps) {
           <input
             type="file"
             id="file-upload"
-            accept=".xlsx,.xls,.csv"
+            accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.txt,.json,.xml,.pptx,.ppt,.png,.jpg,.jpeg,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,application/json,image/*"
             onChange={handleFileChange}
             className="hidden"
           />
 
           {!file ? (
             <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-              <div className="w-12 h-12 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center text-brand-600 mb-3">
-                <FileSpreadsheet className="w-6 h-6" />
+              <div className="w-12 h-12 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center text-brand-600 mb-3 animate-pulse">
+                <FileText className="w-6 h-6" />
               </div>
               <p className="text-sm font-semibold text-slate-800">
-                Drag and drop your Accounting Workbook here, or <span className="text-brand-600 underline">browse</span>
+                Drag and drop your Financial Document here, or <span className="text-brand-600 underline">browse</span>
               </p>
-              <p className="text-xs text-slate-400 mt-1">Supports .XLSX, .XLS, .CSV up to 25MB</p>
-              <p className="text-[11px] text-slate-400 mt-2 italic">Automatically handles Journal, Ledger, Trial Balance, Income Statement & Balance Sheet</p>
+              <p className="text-xs text-slate-400 mt-1">Supports PDF, Excel, Word, CSV, TXT, JSON, Images up to 25MB</p>
+              <p className="text-[11px] text-slate-400 mt-2 italic">Automatically handles Journal, Ledger, Trial Balance, Income Statement, Balance Sheet & Reports</p>
             </label>
           ) : (
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white p-3.5 rounded-xl border border-emerald-200 shadow-sm gap-3">
               <div className="flex items-center gap-3 text-left min-w-0 w-full sm:w-auto">
-                <FileSpreadsheet className="w-8 h-8 text-emerald-600 shrink-0" />
+                {isSpreadsheet ? (
+                  <FileSpreadsheet className="w-8 h-8 text-emerald-600 shrink-0" />
+                ) : (
+                  <FileText className="w-8 h-8 text-emerald-600 shrink-0" />
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold text-slate-900 truncate">{file.name}</p>
                   <p className="text-xs text-slate-400">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
