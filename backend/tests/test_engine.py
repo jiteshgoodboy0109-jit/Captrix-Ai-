@@ -40,11 +40,16 @@ def test_financial_engine_pipeline():
     assert "npv" in corp_fin["capital_budgeting"]
     assert "wacc" in corp_fin["capital_structure"]
 
-    health_score = compute_financial_health_score(statements, ratios)
-    assert 0 <= health_score <= 100
+    health_res = compute_financial_health_score(statements, ratios)
+    assert 0 <= health_res["total_score"] <= 100
+    assert "profitability" in health_res["sub_scores"]
+    assert "liquidity" in health_res["sub_scores"]
+    assert "solvency" in health_res["sub_scores"]
+    assert "efficiency" in health_res["sub_scores"]
 
     insights = generate_ai_insights(statements, ratios, corp_fin)
     assert len(insights["recommendations"]) > 0
+    assert "health_breakdown" in insights
 
 def test_parse_workbook_formats():
     from app.engine.document_parser import parse_workbook

@@ -31,9 +31,13 @@ export default function HistoryPage() {
       if (search) params.search = search;
       if (statusFilter) params.status_filter = statusFilter;
       const res = await api.get('/api/history/', { params });
-      setRecords(res.data);
+      if (Array.isArray(res.data)) {
+        setRecords(res.data);
+      } else {
+        setRecords([]);
+      }
     } catch (err) {
-      console.log('Failed to fetch history list');
+      setRecords([]);
     } finally {
       setLoading(false);
     }

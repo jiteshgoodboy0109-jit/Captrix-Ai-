@@ -1,45 +1,50 @@
 from typing import Dict, List, Any
 
-def compute_financial_health_score(statements: Dict[str, Any], ratios: Dict[str, Any]) -> float:
+def compute_financial_health_score(statements: Dict[str, Any], ratios: Dict[str, Any]) -> Dict[str, Any]:
     prof = ratios.get("profitability", {})
     liq = ratios.get("liquidity", {})
     solv = ratios.get("solvency", {})
     eff = ratios.get("efficiency", {})
 
-    score = 0.0
+    # 1. Profitability (Max 25 pts)
+    np_margin = float(prof.get("net_profit_margin", {}).get("value", 0.0))
+    roe = float(prof.get("return_on_equity", {}).get("value", 0.0))
+    prof_score = min(15.0, max(0.0, (np_margin / 15.0) * 15.0)) + min(10.0, max(0.0, (roe / 20.0) * 10.0))
+    if np_margin < 0: prof_score = max(0.0, prof_score - 5.0)
 
-    # 1. Profitability (25 pts)
-    np_margin = prof.get("net_profit_margin", {}).get("value", 0.0)
-    if np_margin >= 15: score += 25
-    elif np_margin >= 8: score += 20
-    elif np_margin >= 3: score += 12
-    elif np_margin > 0: score += 5
+    # 2. Liquidity (Max 25 pts)
+    cr = float(liq.get("current_ratio", {}).get("value", 1.0))
+    qr = float(liq.get("quick_ratio", {}).get("value", 1.0))
+    liq_score = min(15.0, max(0.0, (cr / 2.0) * 15.0)) + min(10.0, max(0.0, (qr / 1.5) * 10.0))
 
-    # 2. Liquidity (25 pts)
-    cr = liq.get("current_ratio", {}).get("value", 1.0)
-    if cr >= 1.8: score += 25
-    elif cr >= 1.4: score += 20
-    elif cr >= 1.0: score += 12
-    else: score += 5
+    # 3. Solvency (Max 25 pts)
+    de = float(solv.get("debt_to_equity", {}).get("value", 1.0))
+    ic = float(solv.get("interest_coverage_ratio", {}).get("value", 3.0))
+    solv_de_pts = max(0.0, 15.0 - (de * 5.0)) if de > 0 else 15.0
+    solv_ic_pts = min(10.0, max(0.0, (ic / 5.0) * 10.0))
+    solv_score = min(25.0, max(0.0, solv_de_pts + solv_ic_pts))
 
-    # 3. Solvency (25 pts)
-    de = solv.get("debt_to_equity", {}).get("value", 1.0)
-    if de <= 0.8: score += 25
-    elif de <= 1.5: score += 20
-    elif de <= 2.5: score += 12
-    else: score += 5
+    # 4. Efficiency (Max 25 pts)
+    inv_t = float(eff.get("inventory_turnover", {}).get("value", 4.0))
+    asset_t = float(eff.get("asset_turnover", {}).get("value", 1.0))
+    eff_score = min(15.0, max(0.0, (inv_t / 6.0) * 15.0)) + min(10.0, max(0.0, (asset_t / 1.5) * 10.0))
 
-    # 4. Efficiency (25 pts)
-    inv_t = eff.get("inventory_turnover", {}).get("value", 3.0)
-    if inv_t >= 6.0: score += 25
-    elif inv_t >= 3.5: score += 20
-    elif inv_t >= 1.5: score += 12
-    else: score += 5
+    total = round(min(100.0, max(0.0, prof_score + liq_score + solv_score + eff_score)), 1)
 
-    return round(score, 1)
+    return {
+        "total_score": total,
+        "sub_scores": {
+            "profitability": round(prof_score, 1),
+            "liquidity": round(liq_score, 1),
+            "solvency": round(solv_score, 1),
+            "efficiency": round(eff_score, 1)
+        }
+    }
 
 def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], corp_fin: Dict[str, Any]) -> Dict[str, Any]:
-    health_score = compute_financial_health_score(statements, ratios)
+    health_res = compute_financial_health_score(statements, ratios)
+    health_score = health_res["total_score"]
+    health_breakdown = health_res["sub_scores"]
     
     inc = statements.get("income_statement", {})
     bs = statements.get("balance_sheet", {})
@@ -97,23 +102,55 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
         f"with a estimated Cost of Capital (WACC) of {wacc:.1f}%."
     )
 
-    recommendations = [
-        {
+    recommendations = []
+
+    # Dynamic High Priority Recommendation
+    if not is_profitable:
+        recommendations.append({
+            "priority": "HIGH (Immediate)",
+            "title": "Turnaround & Operating Cost Reduction",
+            "action": f"Implement immediate overhead reduction to curb net margin loss of {np_margin:.1f}% and stabilize operating cash flow."
+        })
+    elif cr < 1.2:
+        recommendations.append({
+            "priority": "HIGH (Immediate)",
+            "title": "Immediate Liquidity Injection",
+            "action": f"Secure short-term credit line or inject working capital to raise Current Ratio ({cr:.2f}) above 1.5x minimum safety threshold."
+        })
+    else:
+        recommendations.append({
             "priority": "HIGH (Immediate)",
             "title": "Working Capital & Cash Flow Optimization",
             "action": f"Accelerate receivable collections to compress Cash Conversion Cycle ({ccc:.1f} days) and liberate liquid cash reserves."
-        },
-        {
+        })
+
+    # Dynamic Medium Priority Recommendation
+    if de > 2.0:
+        recommendations.append({
+            "priority": "MEDIUM (3-6 Months)",
+            "title": "Structured Debt Deleveraging",
+            "action": f"Reduce total debt-to-equity leverage from {de:.2f}x to below 1.5x to lower debt service vulnerability."
+        })
+    else:
+        recommendations.append({
             "priority": "MEDIUM (3-6 Months)",
             "title": "Operating Margin Enhancement",
-            "action": f"Conduct audit of administrative & SG&A overheads to raise net profit margin from {np_margin:.1f}% toward target benchmark."
-        },
-        {
+            "action": f"Conduct SG&A audit to expand net profit margin from {np_margin:.1f}% toward industry top-quartile benchmark."
+        })
+
+    # Dynamic Strategic Priority Recommendation
+    if health_score >= 80:
+        recommendations.append({
             "priority": "STRATEGIC (6-12 Months)",
-            "title": "Capital Structure Optimization",
-            "action": f"Refinance short-term liabilities utilizing corporate WACC benchmark of {wacc:.1f}% to lock in long-term fixed financing."
-        }
-    ]
+            "title": "Strategic Expansion & Capital Reinvestment",
+            "action": f"Reinvest surplus return on equity ({roe:.1f}%) into high-NPV capital budgeting expansion initiatives."
+        })
+    else:
+        recommendations.append({
+            "priority": "STRATEGIC (6-12 Months)",
+            "title": "Capital Structure & Refinancing",
+            "action": f"Refinance short-term liabilities utilizing target WACC benchmark of {wacc:.1f}% to lock in long-term fixed rate capital."
+        })
 
     answers = {
         "is_profitable": "Yes, the company generates positive net income." if is_profitable else "No, the company operates at a net loss.",
@@ -125,6 +162,7 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
 
     return {
         "health_score": health_score,
+        "health_breakdown": health_breakdown,
         "executive_summary": executive_summary,
         "strengths": strengths,
         "weaknesses": weaknesses,

@@ -30,11 +30,11 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     long_debt = non_curr_liab.get("long_term_debt", 0.0) if isinstance(non_curr_liab, dict) else 0.0
 
     # 1. Liquidity Ratios
-    current_ratio = round(ca / cl, 2) if cl > 0 else 1.8
-    quick_ratio = round((ca - inv) / cl, 2) if cl > 0 else 1.4
-    cash_ratio = round(cash / cl, 2) if cl > 0 else 0.6
+    current_ratio = round(ca / cl, 2) if cl > 0 else (round(ca, 2) if ca > 0 else 1.0)
+    quick_ratio = round((ca - inv) / cl, 2) if cl > 0 else (round(ca - inv, 2) if (ca - inv) > 0 else 1.0)
+    cash_ratio = round(cash / cl, 2) if cl > 0 else (round(cash, 2) if cash > 0 else 0.5)
     working_capital = ca - cl
-    wc_ratio = round(working_capital / rev, 4) if rev > 0 else 0.20
+    wc_ratio = round(working_capital / rev, 4) if rev > 0 else 0.0
 
     liquidity = {
         "current_ratio": {
@@ -76,12 +76,12 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     # 2. Profitability Ratios
-    gp_margin = round((gp / rev) * 100, 2) if rev > 0 else 40.0
-    np_margin = round((net_inc / rev) * 100, 2) if rev > 0 else 12.5
-    roa = round((net_inc / total_assets) * 100, 2) if total_assets > 0 else 8.5
-    roe = round((net_inc / equity) * 100, 2) if equity > 0 else 16.2
+    gp_margin = round((gp / rev) * 100, 2) if rev > 0 else 0.0
+    np_margin = round((net_inc / rev) * 100, 2) if rev > 0 else 0.0
+    roa = round((net_inc / total_assets) * 100, 2) if total_assets > 0 else 0.0
+    roe = round((net_inc / equity) * 100, 2) if equity != 0 else 0.0
     capital_employed = equity + long_debt
-    roce = round((ebit / capital_employed) * 100, 2) if capital_employed > 0 else 14.0
+    roce = round((ebit / capital_employed) * 100, 2) if capital_employed != 0 else 0.0
 
     profitability = {
         "gross_profit_margin": {
@@ -137,10 +137,10 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     # 3. Solvency & Debt Ratios
-    debt_to_equity = round(total_liab / equity, 2) if equity > 0 else 0.65
-    debt_ratio = round(total_liab / total_assets, 2) if total_assets > 0 else 0.40
-    equity_ratio = round(equity / total_assets, 2) if total_assets > 0 else 0.60
-    interest_coverage = round(ebit / interest, 2) if interest > 0 else 12.5
+    debt_to_equity = round(total_liab / equity, 2) if equity > 0 else (0.0 if total_liab == 0 else 2.5)
+    debt_ratio = round(total_liab / total_assets, 2) if total_assets > 0 else 0.0
+    equity_ratio = round(equity / total_assets, 2) if total_assets > 0 else 0.0
+    interest_coverage = round(ebit / interest, 2) if interest > 0 else (10.0 if ebit > 0 else 0.0)
 
     solvency = {
         "debt_to_equity": {
@@ -182,9 +182,9 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     # 4. Efficiency Ratios
-    inv_turnover = round(cogs / inv, 2) if inv > 0 else (round(rev / inv, 2) if inv > 0 else 5.2)
-    rec_turnover = round(rev / rec, 2) if rec > 0 else 7.8
-    asset_turnover = round(rev / total_assets, 2) if total_assets > 0 else 1.25
+    inv_turnover = round(cogs / inv, 2) if inv > 0 else (round(rev / inv, 2) if inv > 0 else 4.0)
+    rec_turnover = round(rev / rec, 2) if rec > 0 else 6.0
+    asset_turnover = round(rev / total_assets, 2) if total_assets > 0 else 1.0
 
     efficiency = {
         "inventory_turnover": {

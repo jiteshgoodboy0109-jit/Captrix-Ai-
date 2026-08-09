@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
 import { getAuth, Auth } from "firebase/auth";
-import { getFirestore, doc, setDoc, serverTimestamp, Firestore } from "firebase/firestore";
+import { getFirestore, doc, setDoc, serverTimestamp, Firestore, initializeFirestore, memoryLocalCache } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
 export const firebaseConfig = {
@@ -22,7 +22,9 @@ if (typeof window !== 'undefined') {
   try {
     app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
     auth = getAuth(app);
-    db = getFirestore(app);
+    db = initializeFirestore(app, {
+      localCache: memoryLocalCache()
+    });
 
     isSupported().then((supported) => {
       if (supported && app) {

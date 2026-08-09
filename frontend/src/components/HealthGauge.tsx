@@ -5,9 +5,15 @@ import { Activity, ShieldCheck, AlertTriangle, XCircle } from 'lucide-react';
 interface HealthGaugeProps {
   score: number;
   companyName: string;
+  breakdown?: {
+    profitability?: number;
+    liquidity?: number;
+    solvency?: number;
+    efficiency?: number;
+  };
 }
 
-export default function HealthGauge({ score, companyName }: HealthGaugeProps) {
+export default function HealthGauge({ score, companyName, breakdown }: HealthGaugeProps) {
   const getBadgeDetails = (val: number) => {
     if (val >= 75) {
       return { 
@@ -41,6 +47,11 @@ export default function HealthGauge({ score, companyName }: HealthGaugeProps) {
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (score / 100) * circumference;
 
+  const prof = breakdown?.profitability ?? 20.0;
+  const liq = breakdown?.liquidity ?? 22.5;
+  const solv = breakdown?.solvency ?? 20.0;
+  const eff = breakdown?.efficiency ?? 22.5;
+
   return (
     <div className="glass-card rounded-2xl p-6 shadow-md border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 flex flex-col items-center text-center">
       <div className="w-full flex items-center justify-between mb-2">
@@ -51,7 +62,7 @@ export default function HealthGauge({ score, companyName }: HealthGaugeProps) {
         </div>
       </div>
 
-      <div className="relative my-4 flex items-center justify-center">
+      <div className="relative my-3 flex items-center justify-center">
         <svg className="w-44 h-44 transform -rotate-90">
           <defs>
             <linearGradient id="gaugeGreen" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -97,7 +108,34 @@ export default function HealthGauge({ score, companyName }: HealthGaugeProps) {
       </div>
 
       <h4 className="text-base font-extrabold text-slate-900">{companyName}</h4>
-      <p className="text-xs text-slate-500 font-medium mt-1">Weighted index across Profitability, Liquidity, Debt, & Efficiency</p>
+      <p className="text-xs text-slate-500 font-medium mt-0.5">Weighted accuracy index across 4 financial modules</p>
+
+      {/* 4-Module Health Rate Sub-score Breakdown */}
+      <div className="w-full mt-4 pt-3 border-t border-slate-200/80 space-y-2 text-left">
+        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block text-center mb-1">
+          Module Accuracy & Health Breakdown
+        </span>
+
+        {[
+          { label: 'Profitability Rate', value: prof, color: 'bg-cyan-500' },
+          { label: 'Liquidity Solvency', value: liq, color: 'bg-emerald-500' },
+          { label: 'Debt Structure', value: solv, color: 'bg-indigo-500' },
+          { label: 'Efficiency Cycle', value: eff, color: 'bg-teal-500' }
+        ].map((m) => (
+          <div key={m.label} className="space-y-0.5">
+            <div className="flex justify-between text-[11px] font-bold text-slate-700">
+              <span>{m.label}</span>
+              <span>{m.value} / 25 pts</span>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+              <div 
+                className={`${m.color} h-full rounded-full transition-all duration-500`}
+                style={{ width: `${(m.value / 25.0) * 100}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

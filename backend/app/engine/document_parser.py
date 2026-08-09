@@ -502,16 +502,30 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                 })
 
     if not normalized_items:
-        normalized_items = [
-            {"account_code": "1001", "account_name": "Cash & Equivalents", "account_type": "CASH_ASSET", "debit": 125000.0, "credit": 0.0, "net_amount": 125000.0, "sheet": "ParsedSheet"},
-            {"account_code": "1002", "account_name": "Accounts Receivable", "account_type": "RECEIVABLE_ASSET", "debit": 85000.0, "credit": 0.0, "net_amount": 85000.0, "sheet": "ParsedSheet"},
-            {"account_code": "1003", "account_name": "Inventory", "account_type": "INVENTORY_ASSET", "debit": 45000.0, "credit": 0.0, "net_amount": 45000.0, "sheet": "ParsedSheet"},
-            {"account_code": "2001", "account_name": "Accounts Payable", "account_type": "PAYABLE_LIABILITY", "debit": 0.0, "credit": 65000.0, "net_amount": -65000.0, "sheet": "ParsedSheet"},
-            {"account_code": "3001", "account_name": "Common Capital Stock", "account_type": "EQUITY", "debit": 0.0, "credit": 190000.0, "net_amount": -190000.0, "sheet": "ParsedSheet"},
-            {"account_code": "4001", "account_name": "Operating Sales Revenue", "account_type": "REVENUE", "debit": 0.0, "credit": 250000.0, "net_amount": -250000.0, "sheet": "ParsedSheet"},
-            {"account_code": "5001", "account_name": "Operating Cost of Goods Sold", "account_type": "EXPENSE", "debit": 150000.0, "credit": 0.0, "net_amount": 150000.0, "sheet": "ParsedSheet"},
-            {"account_code": "5002", "account_name": "General & Administrative Expense", "account_type": "EXPENSE", "debit": 50000.0, "credit": 0.0, "net_amount": 50000.0, "sheet": "ParsedSheet"},
-        ]
+        # Dynamic fallback: Scan raw text lines from uploaded file to extract custom items
+        normalized_items = parse_text_lines(file_bytes)
+
+    if not normalized_items:
+        # Extract generic rows if numbers exist in file bytes
+        try:
+            content_str = file_bytes.decode('utf-8', errors='ignore')
+            lines = [l.strip() for l in content_str.splitlines() if l.strip()]
+            for l_idx, line in enumerate(lines[:30]):
+                nums = re.findall(r'[-+]?\d*\.\d+|\d+', line)
+                if nums:
+                    val = clean_value(nums[0])
+                    if val != 0.0:
+                        normalized_items.append({
+                            "account_code": f"DYNAMIC-{l_idx}",
+                            "account_name": line[:30].strip(),
+                            "account_type": classify_account(line, "Extracted"),
+                            "debit": val if val > 0 else 0.0,
+                            "credit": abs(val) if val < 0 else 0.0,
+                            "net_amount": val,
+                            "sheet": "ExtractedData"
+                        })
+        except Exception:
+            pass
 
     unique_items = []
     seen = set()
