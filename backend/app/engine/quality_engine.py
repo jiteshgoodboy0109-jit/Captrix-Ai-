@@ -42,9 +42,14 @@ def compute_financial_quality_score(
     reconciliation_pts = round(pass_rate * 25.0, 1)
 
     total_score = round(min(100.0, max(0.0, extraction_pts + bs_pts + cf_pts + reconciliation_pts)), 1)
-
-    # Determine confidence level
-    if total_score >= 90.0 and failed_count == 0 and bs_status == "PASS":
+    
+    # HARD GATE: If balance sheet check fails, cap total quality score at 50.0 and force LOW confidence
+    quality_status = "VERIFIED"
+    if bs_status == "FAIL":
+        total_score = min(50.0, total_score)
+        confidence_level = "LOW"
+        quality_status = "VALIDATION_FAILED"
+    elif total_score >= 90.0 and failed_count == 0:
         confidence_level = "HIGH"
     elif total_score >= 70.0 and failed_count == 0:
         confidence_level = "MEDIUM"
@@ -53,8 +58,9 @@ def compute_financial_quality_score(
 
     return {
         "quality_score": total_score,
+        "quality_status": quality_status,
         "confidence_level": confidence_level,
-        "is_reconciled": failed_count == 0,
+        "is_reconciled": failed_count == 0 and bs_status == "PASS",
         "breakdown": {
             "extraction_and_mapping": round(extraction_pts, 1),
             "balance_sheet_equation": round(bs_pts, 1),

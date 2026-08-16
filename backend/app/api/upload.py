@@ -147,7 +147,7 @@ async def upload_financial_file(
         quality_report = sanitize_json_data(compute_financial_quality_score(reconciliation_report, statements.get("validation_report", {})))
 
         # 8. AI Insights & Health Score Engine
-        ai_insights = sanitize_json_data(generate_ai_insights(statements, ratios, corp_fin))
+        ai_insights = sanitize_json_data(generate_ai_insights(statements, ratios, corp_fin, canonical_dataset))
         ai_record = AIReport(
             upload_id=upload.id,
             health_score=clean_value(quality_report.get("quality_score", ai_insights.get("health_score", 85.0))),

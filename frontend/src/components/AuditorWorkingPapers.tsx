@@ -183,7 +183,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
             </div>
             <div className="text-right">
               <p className="text-xs text-slate-500 font-medium">Accruals Amount</p>
-              <p className="text-sm font-extrabold text-slate-800">${sloan_accruals?.accruals_amount?.toLocaleString()}</p>
+              <p className="text-sm font-extrabold text-slate-800">${sloan_accruals?.accruals_amount?.toLocaleString() ?? 0}</p>
             </div>
           </div>
 

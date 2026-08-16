@@ -38,8 +38,8 @@ def calculate_dupont_analysis(statements: Dict[str, Any], ratios: Dict[str, Any]
     # 5-Step DuPont Calculation
     roe_5step = round(tax_burden * interest_burden * ebit_margin * asset_turnover * equity_multiplier * 100.0, 2)
 
-    # Actual Reported ROE from ratios module
-    reported_roe = float(ratios.get("profitability", {}).get("return_on_equity", {}).get("value", roe_3step))
+    raw_roe = ratios.get("profitability", {}).get("return_on_equity", {}).get("value")
+    reported_roe = float(raw_roe) if (raw_roe is not None and not isinstance(raw_roe, str)) else roe_3step
 
     # 3. Determine Primary ROE Driver
     driver_scores = {

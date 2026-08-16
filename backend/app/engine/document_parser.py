@@ -18,24 +18,28 @@ ACCOUNT_TYPE_RULES = {
 
 def clean_value(val: Any) -> float:
     """Safely convert cell value to float. Preserves signs and returns 0.0 for missing/invalid cells."""
-    if pd.isna(val) or val is None:
-        return 0.0
+    v = clean_value_or_none(val)
+    return v if v is not None else 0.0
+
+def clean_value_or_none(val: Any) -> Optional[float]:
+    """Safely convert cell value to float. Returns None for missing/blank/unreported cells."""
+    if is_blank_value(val):
+        return None
     if isinstance(val, (int, float)):
         v = float(val)
         if math.isnan(v) or math.isinf(v):
-            return 0.0
+            return None
         return v
-    
     s = str(val).replace("$", "").replace("₹", "").replace("€", "").replace("£", "").replace(",", "").strip()
     if s.startswith("(") and s.endswith(")"):
         s = "-" + s[1:-1]
     try:
         v = float(s)
         if math.isnan(v) or math.isinf(v):
-            return 0.0
+            return None
         return v
     except ValueError:
-        return 0.0
+        return None
 
 def is_blank_value(val: Any) -> bool:
     """Check if a cell is truly blank/unreported vs zero."""
@@ -82,7 +86,17 @@ def classify_account(name: str, sheet_context: str = "") -> str:
     name_lower = name.lower()
     ctx_lower = sheet_context.lower()
     
-    # Specific account mapping overrides
+    # Specific account mapping overrides for Non-Financial / Metrics
+    metric_keywords = [
+        "no. of equity shares", "equity shares in cr", "number of shares", "share count",
+        "shares outstanding", "face value", "eps", "earnings per share", "diluted eps",
+        "basic eps", "book value per share", "dividend per share", "number of employees",
+        "pe ratio", "p/e", "margin %", "growth %", "yield", "price to earnings"
+    ]
+    if any(kw in name_lower for kw in metric_keywords):
+        return "METRIC"
+    if "capital work" in name_lower or "work in progress" in name_lower or "cwip" in name_lower:
+        return "ASSET"
     if "cash" in name_lower or "bank" in name_lower:
         return "CASH_ASSET"
     if "receivable" in name_lower or "debtor" in name_lower:
@@ -224,11 +238,11 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
     }
 
 def detect_year_columns(headers: List[Any], top_rows: List[List[Any]]) -> Dict[int, str]:
-    """Scan headers and top 5 rows to locate financial year column indices."""
+    """Scan headers and provided top rows to locate financial year column indices."""
     year_map = {}
     
     # Combined search tokens across headers and top rows
-    scan_rows = [headers] + top_rows[:5]
+    scan_rows = [headers] + top_rows
     
     for r_idx, row in enumerate(scan_rows):
         for col_idx, cell in enumerate(row):
@@ -236,7 +250,7 @@ def detect_year_columns(headers: List[Any], top_rows: List[List[Any]]) -> Dict[i
                 continue
             cell_str = str(cell).strip()
             
-            # Match FY2024, FY24, 2024, 31-Mar-2024, 31/03/2025, Q1 2025
+            # Match FY2024, FY24, 2024, 31-Mar-2024, 31/03/2025, Q1 2025, 2026-03-31 00:00:00
             m_year = re.search(r'\b(201[5-9]|202[0-9]|2030)\b', cell_str)
             m_fy = re.search(r'\bFY\s*([0-9]{2,4})\b', cell_str, re.IGNORECASE)
             
@@ -254,7 +268,7 @@ def detect_columns(df: pd.DataFrame) -> Dict[str, str]:
     
     for c in cols:
         clow = c.lower()
-        if not mapping.get("account_name") and any(k in clow for k in ["account", "particulars", "description", "name", "ledger", "item", "line item"]):
+        if not mapping.get("account_name") and any(k in clow for k in ["account", "particulars", "description", "name", "ledger", "item", "line item", "report date", "narration", "title", "label"]):
             mapping["account_name"] = c
         elif not mapping.get("debit") and any(k in clow for k in ["debit", "dr", "dr."]):
             mapping["debit"] = c
@@ -267,12 +281,18 @@ def detect_columns(df: pd.DataFrame) -> Dict[str, str]:
         elif not mapping.get("type") and any(k in clow for k in ["type", "group", "category", "class"]):
             mapping["type"] = c
 
-    # Fallback if text columns are present
+    # Fallback if text columns are present: prioritize Column 0 if it contains text labels
     if not mapping.get("account_name"):
-        for c in cols:
-            if df[c].dtype == "object":
-                mapping["account_name"] = c
-                break
+        if len(cols) > 0:
+            col0_text_count = sum(1 for v in df[cols[0]].dropna() if isinstance(v, str) and not v.replace(".", "", 1).replace("-", "", 1).isdigit())
+            if col0_text_count > 0:
+                mapping["account_name"] = cols[0]
+        
+        if not mapping.get("account_name"):
+            for c in cols:
+                if df[c].dtype == "object":
+                    mapping["account_name"] = c
+                    break
         if not mapping.get("account_name") and len(cols) > 0:
             mapping["account_name"] = cols[0]
 
@@ -500,10 +520,14 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     except Exception as e:
         print(f"Excel read error for {filename}: {e}")
 
+    SKIP_SHEETS = ["customization", "parameters", "template", "setup", "config", "instruction", "instructions", "notes", "readme"]
+
     if sheet_data:
         meta_info = detect_company_and_currency(sheet_data, filename)
 
         for sheet_name, df in sheet_data.items():
+            if any(skip_kw in str(sheet_name).lower().strip() for skip_kw in SKIP_SHEETS):
+                continue
             if df.empty:
                 continue
             df_clean = df.dropna(how="all").dropna(axis=1, how="all")
@@ -521,10 +545,17 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                 found_header = True
 
             if not found_header:
-                for r_idx in range(min(8, len(df_clean))):
+                for r_idx in range(min(100, len(df_clean))):
                     row_vals = [str(v).lower() for v in df_clean.iloc[r_idx].values if pd.notna(v)]
                     row_str = " ".join(row_vals)
                     
+                    # If row has multiple year values, it is a date header row
+                    years_in_row = [v for v in row_vals if re.search(r'\b(201[5-9]|202[0-9]|2030)\b', v)]
+                    if len(years_in_row) >= 2:
+                        header_row_idx = r_idx
+                        found_header = True
+                        break
+
                     # Avoid matching data rows (which usually contain numbers)
                     numeric_count = sum(1 for v in df_clean.iloc[r_idx].values if pd.notna(v) and isinstance(v, (int, float)))
                     if numeric_count > 1 and len(row_vals) > 2:
@@ -538,13 +569,13 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                 if found_header and header_row_idx > 0:
                     header_series = df_clean.iloc[header_row_idx]
                     df_body = df_clean.iloc[header_row_idx + 1:].copy()
-                    df_body.columns = header_series
+                    df_body.columns = [str(c).strip() if pd.notna(c) else f"Col{c_i}" for c_i, c in enumerate(header_series)]
                 else:
                     df_body = df_clean.copy()
 
-            # Multi-Year Column Detection
+            # Multi-Year Column Detection across full sheet slice
             headers_list = list(df_body.columns)
-            top_rows_list = df_body.iloc[:5].values.tolist()
+            top_rows_list = df_clean.iloc[:100].values.tolist()
             year_col_map = detect_year_columns(headers_list, top_rows_list)
 
             col_map = detect_columns(df_body)
@@ -555,12 +586,18 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
 
             # Determine account column index
             acct_col_idx = list(df_body.columns).index(acct_col)
+            current_section = ""
 
             for idx, row in df_body.iterrows():
                 acct_name = str(row[acct_col]).strip() if pd.notna(row[acct_col]) else ""
                 if not acct_name or acct_name.lower() in ["total", "subtotal", "grand total", "nan", "particulars", "account name", "description"]:
                     continue
                 
+                if acct_name.upper() in ["PROFIT & LOSS", "QUARTERS", "BALANCE SHEET", "CASH FLOW", "PRICE", "DERIVED"]:
+                    current_section = acct_name.upper()
+                    continue
+
+                is_quarterly_item = (current_section == "QUARTERS") or ("quarters" in sheet_name.lower())
                 acct_type = classify_account(acct_name, sheet_name)
 
                 if year_col_map:
@@ -578,6 +615,7 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                                 "account_name": acct_name,
                                 "account_type": acct_type,
                                 "is_summary": is_summary_or_total_row(acct_name),
+                                "is_quarterly": is_quarterly_item,
                                 "debit": val if val > 0 and acct_type in ["ASSET", "EXPENSE"] else 0.0,
                                 "credit": abs(val) if val < 0 or acct_type in ["LIABILITY", "EQUITY", "REVENUE"] else 0.0,
                                 "net_amount": val,

@@ -5,7 +5,7 @@ def safe_ratio(num: float, den: float, multiply_100: bool = False, decimal_place
     """Calculate ratio with zero-denominator and missing-input protection."""
     if den == 0 or den is None or num is None:
         return {
-            "value": 0.0,
+            "value": None,
             "display_value": "Ratio Not Calculable — Required Source Data Missing / Denominator = 0",
             "is_calculable": False
         }
@@ -297,8 +297,9 @@ def calculate_corporate_finance(statements: Dict[str, Any], ratios: Dict[str, An
     cf = statements.get("cash_flow", {})
 
     rev = inc.get("total_revenue", 0.0)
-    cogs = inc.get("cost_of_goods_sold", 0.0)
-    net_inc = inc.get("net_income", 0.0)
+    raw_cogs = inc.get("cost_of_goods_sold")
+    cogs_val = float(raw_cogs) if (raw_cogs is not None and not isinstance(raw_cogs, str)) else 0.0
+    net_inc = inc.get("net_income", 0.0) or 0.0
     
     curr_assets = bs.get("current_assets", {})
     ca = curr_assets.get("total_current_assets", 0.0) if isinstance(curr_assets, dict) else 0.0
@@ -318,9 +319,9 @@ def calculate_corporate_finance(statements: Dict[str, Any], ratios: Dict[str, An
     long_debt = lt_liab_dict.get("total_long_term_liabilities", 0.0) if isinstance(lt_liab_dict, dict) else float(lt_liab_dict or 0.0)
 
     # Working Capital & Cash Conversion Cycle (CCC)
-    dio = round((inv / cogs) * 365, 1) if cogs > 0 else 0.0
-    dso = round((rec / rev) * 365, 1) if rev > 0 else 0.0
-    dpo = round((pay / cogs) * 365, 1) if cogs > 0 else 0.0
+    dio = round((inv / cogs_val) * 365, 1) if cogs_val > 0 else 0.0
+    dso = round((rec / rev) * 365, 1) if (rev is not None and rev > 0) else 0.0
+    dpo = round((pay / cogs_val) * 365, 1) if cogs_val > 0 else 0.0
 
     operating_cycle = round(dio + dso, 1)
     cash_conversion_cycle = round(operating_cycle - dpo, 1)
@@ -334,7 +335,7 @@ def calculate_corporate_finance(statements: Dict[str, Any], ratios: Dict[str, An
         "days_payable_outstanding_dpo": dpo,
         "operating_cycle": operating_cycle,
         "cash_conversion_cycle": cash_conversion_cycle,
-        "interpretation": f"Cash conversion cycle is {cash_conversion_cycle:.1f} days." if (cogs > 0 and rev > 0) else "Working capital cycle metrics require valid Revenue and COGS in source workbook."
+        "interpretation": f"Cash conversion cycle is {cash_conversion_cycle:.1f} days." if (cogs_val > 0 and rev is not None and rev > 0) else "Working capital cycle metrics require valid Revenue and COGS in source workbook."
     }
 
     # Capital Structure & WACC

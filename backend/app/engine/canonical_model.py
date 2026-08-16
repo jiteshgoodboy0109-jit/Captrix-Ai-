@@ -17,6 +17,11 @@ def build_canonical_dataset(normalized_items: List[Dict[str, Any]], filename: st
     layer_a_raw_records = []
     layer_b_canonical_metrics = {}
     
+    # Determine target fiscal year (latest numeric year)
+    years_found = list(set(str(i.get("year", "Current")) for i in normalized_items if i.get("year")))
+    numeric_years = sorted([yr for yr in years_found if yr.isdigit() and len(yr) == 4], key=int)
+    target_year = numeric_years[-1] if numeric_years else (sorted(years_found)[-1] if years_found else "Current")
+
     # Standard metric mapping rules based on extracted line items
     for item in normalized_items:
         source_label = str(item.get("source_label") or item.get("account_name", "")).strip()
@@ -31,6 +36,7 @@ def build_canonical_dataset(normalized_items: List[Dict[str, Any]], filename: st
         currency = str(item.get("currency", "USD"))
         acct_type = item.get("account_type", "ASSET")
         is_summary = item.get("is_summary", False)
+        is_quarterly = item.get("is_quarterly", False)
 
         # Layer A Record
         layer_a_record = {
@@ -51,8 +57,8 @@ def build_canonical_dataset(normalized_items: List[Dict[str, Any]], filename: st
         }
         layer_a_raw_records.append(layer_a_record)
 
-        # Layer B Mapping (Filter out summary rows for detailed mapping)
-        if not is_summary:
+        # Layer B Mapping (Filter to target year, detailed non-quarterly items)
+        if not is_summary and not is_quarterly and (year == target_year or year == "Current"):
             if "revenue" in label_lower or "sales" in label_lower or "turnover" in label_lower:
                 if "revenue" not in layer_b_canonical_metrics or abs(val) > abs(layer_b_canonical_metrics["revenue"]["value"]):
                     layer_b_canonical_metrics["revenue"] = {

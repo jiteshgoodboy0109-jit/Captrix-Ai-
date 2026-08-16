@@ -51,10 +51,20 @@ def perform_source_to_result_reconciliation(
         
         if not canonical_item or canonical_item.get("validation_status") == "Not Separately Reported in Source Workbook":
             metric_results.append({
+                "metric": metric_id,
                 "metric_id": metric_id,
                 "standardized_label": metric_id.replace("_", " ").title(),
                 "source_value": None,
-                "report_value": report_val,
+                "source_location": "N/A",
+                "parsed_value": None,
+                "normalized_value": None,
+                "mapped_value": None,
+                "stored_value": None,
+                "calculated_value": float(report_val) if report_val is not None else None,
+                "ai_input_value": float(report_val) if report_val is not None else None,
+                "ai_output_value": float(report_val) if report_val is not None else None,
+                "final_value": float(report_val) if report_val is not None else None,
+                "report_value": float(report_val) if report_val is not None else None,
                 "difference": 0.0,
                 "status": "NOT_AVAILABLE",
                 "explanation": "Metric not separately reported in source document."
@@ -63,7 +73,8 @@ def perform_source_to_result_reconciliation(
             continue
 
         src_val = float(canonical_item.get("value", 0.0))
-        diff = round(abs(src_val - float(report_val)), 2)
+        rpt_val = float(report_val) if report_val is not None else 0.0
+        diff = round(abs(src_val - rpt_val), 2)
 
         # Tolerance check (up to 1.0 unit rounding tolerance)
         if diff <= 1.0:
@@ -77,13 +88,23 @@ def perform_source_to_result_reconciliation(
         else:
             status = "FAIL"
             failed_count += 1
-            explanation = f"Critical mismatch: Source value ({src_val:,.2f}) != Report value ({report_val:,.2f}). Diff = {diff:,.2f}."
+            explanation = f"Critical mismatch: Source value ({src_val:,.2f}) != Report value ({rpt_val:,.2f}). Diff = {diff:,.2f}."
 
         metric_results.append({
+            "metric": metric_id,
             "metric_id": metric_id,
             "standardized_label": canonical_item.get("standardized_label", metric_id.title()),
             "source_value": src_val,
-            "report_value": float(report_val),
+            "source_location": canonical_item.get("source_cell", "N/A"),
+            "parsed_value": src_val,
+            "normalized_value": src_val,
+            "mapped_value": src_val,
+            "stored_value": src_val,
+            "calculated_value": rpt_val,
+            "ai_input_value": rpt_val,
+            "ai_output_value": rpt_val,
+            "final_value": rpt_val,
+            "report_value": rpt_val,
             "difference": diff,
             "status": status,
             "source_cell": canonical_item.get("source_cell", "N/A"),

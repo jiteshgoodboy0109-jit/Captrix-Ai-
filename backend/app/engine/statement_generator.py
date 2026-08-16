@@ -14,18 +14,16 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         "item_count": len(latest_items)
     }
 
-    # Separate detailed line items from summary total rows to prevent double counting
-    detail_items = [i for i in latest_items if not i.get("is_summary", False)]
-    eval_items = detail_items if detail_items else latest_items
+    # Separate detailed line items from summary total rows and quarterly items to prevent double counting
+    detail_items = [i for i in latest_items if not i.get("is_summary", False) and not i.get("is_quarterly", False) and i.get("account_type") != "METRIC"]
+    eval_items = detail_items if detail_items else [i for i in latest_items if i.get("account_type") != "METRIC"]
 
     # Categorize items for Income Statement & Balance Sheet
-    net_inc_items = [i for i in eval_items if any(k in str(i.get("account_name")).lower() for k in ["net profit", "net income", "profit for the year", "profit after tax", "pat"])]
-    if not net_inc_items:
-        net_inc_items = [i for i in latest_items if any(k in str(i.get("account_name")).lower() for k in ["net profit", "net income", "profit for the year", "profit after tax", "pat"])]
+    net_inc_items = [i for i in latest_items if any(k in str(i.get("account_name")).lower() for k in ["net profit", "net income", "profit for the year", "profit after tax", "pat"]) and not i.get("is_quarterly", False)]
 
-    revenues = [i for i in eval_items if (i.get("account_type") in ["REVENUE", "SALES"]) and i not in net_inc_items]
+    revenues = [i for i in eval_items if (i.get("account_type") in ["REVENUE", "SALES"]) and i not in net_inc_items and not i.get("is_quarterly", False)]
     if not revenues:
-        revenues = [i for i in latest_items if (i.get("account_type") in ["REVENUE", "SALES"] or any(k in str(i.get("account_name")).lower() for k in ["revenue", "sales", "turnover", "income from operations"])) and i not in net_inc_items]
+        revenues = [i for i in latest_items if (i.get("account_type") in ["REVENUE", "SALES"] or any(k in str(i.get("account_name")).lower() for k in ["revenue", "sales", "turnover", "income from operations"])) and i not in net_inc_items and not i.get("is_quarterly", False)]
 
     cogs_items = [i for i in eval_items if i.get("account_type") == "COGS" or "cogs" in str(i.get("account_name")).lower() or "cost of goods" in str(i.get("account_name")).lower() or "cost of sales" in str(i.get("account_name")).lower()]
     if not cogs_items:
@@ -38,26 +36,36 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     expenses = [i for i in eval_items if i.get("account_type") in ["EXPENSE", "COGS", "DEPRECIATION_EXPENSE", "INTEREST_EXPENSE", "TAX_EXPENSE"]]
     opex_items = [i for i in eval_items if i.get("account_type") == "EXPENSE" and i not in cogs_items + depr_items + interest_items + tax_items]
 
-    assets = [i for i in eval_items if ("ASSET" in str(i.get("account_type")) or i.get("account_type") == "ASSET") and "cash flow" not in str(i.get("sheet")).lower() and "cash flow" not in str(i.get("account_name")).lower()]
-    liabilities = [i for i in eval_items if "LIABILITY" in str(i.get("account_type")) or i.get("account_type") == "LIABILITY"]
-    equity = [i for i in eval_items if "EQUITY" in str(i.get("account_type")) or i.get("account_type") == "EQUITY"]
+    assets = [i for i in eval_items if i.get("account_type") not in ["METRIC", "EXPENSE", "REVENUE", "COGS", "DEPRECIATION_EXPENSE", "INTEREST_EXPENSE", "TAX_EXPENSE", "EQUITY", "LIABILITY"] and ("ASSET" in str(i.get("account_type")) or i.get("account_type") == "ASSET") and "cash flow" not in str(i.get("sheet")).lower() and "cash flow" not in str(i.get("account_name")).lower() and not any(kw in str(i.get("account_name")).lower() for kw in ["share", "equity share", "eps", "face value", "number of shares"])]
+    liabilities = [i for i in eval_items if ("LIABILITY" in str(i.get("account_type")) or i.get("account_type") == "LIABILITY") and i.get("account_type") != "METRIC"]
+    equity = [i for i in eval_items if ("EQUITY" in str(i.get("account_type")) or i.get("account_type") == "EQUITY") and i.get("account_type") != "METRIC"]
 
     # 2. Income Statement Calculation (Strictly Grounded)
     total_revenue = sum(abs(i.get("net_amount", 0.0)) for i in revenues)
-    rev_ops_items = [i for i in revenues if "other income" not in str(i.get("account_name")).lower() and "other revenue" not in str(i.get("account_name")).lower()]
+    rev_ops_items = [i for i in revenues if "other income" not in str(i.get("account_name")).lower() and "other revenue" not in str(i.get("account_name")).lower() and "non-operating" not in str(i.get("account_name")).lower()]
+    other_inc_items = [i for i in revenues if "other income" in str(i.get("account_name")).lower() or "other revenue" in str(i.get("account_name")).lower() or "non-operating" in str(i.get("account_name")).lower()]
+    
     revenue_from_operations = sum(abs(i.get("net_amount", 0.0)) for i in rev_ops_items) if rev_ops_items else total_revenue
+    other_income = sum(abs(i.get("net_amount", 0.0)) for i in other_inc_items)
 
-    total_cogs = sum(abs(i.get("net_amount", 0.0)) for i in cogs_items)
+    has_cogs = len(cogs_items) > 0
+    total_cogs = sum(abs(i.get("net_amount", 0.0)) for i in cogs_items) if has_cogs else None
 
     # Check explicit Gross Profit item in source workbook if present
     explicit_gp_items = [i for i in latest_items if "gross profit" in str(i.get("account_name")).lower() or "gross margin" in str(i.get("account_name")).lower()]
     if explicit_gp_items:
         gross_profit = explicit_gp_items[0].get("net_amount", 0.0)
+        gross_profit_status = "EXPLICIT_SOURCE_ROW"
+    elif has_cogs and total_cogs is not None:
+        gross_profit = total_revenue - total_cogs
+        gross_profit_status = "DERIVED"
     else:
-        gross_profit = total_revenue - total_cogs if (total_revenue > 0 or total_cogs > 0) else 0.0
+        gross_profit = None
+        gross_profit_status = "NOT_CALCULABLE"
     
     total_opex = sum(abs(i.get("net_amount", 0.0)) for i in opex_items)
-    ebitda = gross_profit - total_opex
+    gp_val_for_ebitda = gross_profit if gross_profit is not None else total_revenue
+    ebitda = gp_val_for_ebitda - total_opex
     
     depreciation = sum(abs(i.get("net_amount", 0.0)) for i in depr_items)
     ebit = ebitda - depreciation
@@ -66,17 +74,27 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     ebt = ebit - interest_expense
     
     tax_expense = sum(abs(i.get("net_amount", 0.0)) for i in tax_items)
+    derived_net_income = ebt - tax_expense
     
     if net_inc_items:
         net_income = net_inc_items[0].get("net_amount", 0.0) if len(net_inc_items) == 1 else sum(i.get("net_amount", 0.0) for i in net_inc_items)
+        net_income_source = "SOURCE_ROW"
+        diff_ni = abs(net_income - derived_net_income)
+        net_income_reconciliation_status = "VERIFIED" if diff_ni <= 1.0 or (abs(net_income) > 0 and diff_ni / abs(net_income) <= 0.01) else "REVIEW_REQUIRED"
     else:
-        net_income = ebt - tax_expense
+        net_income = derived_net_income
+        net_income_source = "DERIVED"
+        net_income_reconciliation_status = "DERIVED"
 
     income_statement = {
+        "sales": round(revenue_from_operations, 2),
+        "other_income": round(other_income, 2),
         "revenue_from_operations": round(revenue_from_operations, 2),
         "total_revenue": round(total_revenue, 2),
-        "cost_of_goods_sold": round(total_cogs, 2),
-        "gross_profit": round(gross_profit, 2),
+        "cost_of_goods_sold": round(total_cogs, 2) if total_cogs is not None else None,
+        "cogs_status": "VERIFIED" if has_cogs else "NOT_REPORTED",
+        "gross_profit": round(gross_profit, 2) if gross_profit is not None else None,
+        "gross_profit_status": gross_profit_status,
         "operating_expenses": round(total_opex, 2),
         "ebitda": round(ebitda, 2),
         "depreciation_amortization": round(depreciation, 2),
@@ -85,7 +103,9 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         "ebt": round(ebt, 2),
         "tax_expense": round(tax_expense, 2),
         "tax_status": "VERIFIED" if tax_items else "Not Separately Reported in Source Workbook",
-        "net_income": round(net_income, 2)
+        "net_income": round(net_income, 2),
+        "net_income_source": net_income_source,
+        "net_income_reconciliation_status": net_income_reconciliation_status
     }
 
     # 3. Balance Sheet Calculation (Strictly Grounded)
@@ -139,9 +159,27 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     }
     
     other_assets = sum(abs(i.get("net_amount", 0.0)) for i in assets if "other asset" in str(i.get("account_name")).lower())
+    # Include any non-current asset not captured by investment/ppe/intangibles/other (e.g. CWIP, Net Block, etc.)
+    already_classified_nca = set()
+    for i in assets:
+        nm = str(i.get("account_name")).lower()
+        if "investment" in nm and i not in current_asset_items:
+            already_classified_nca.add(id(i))
+        elif any(k in nm for k in ["land", "building", "equipment", "machinery", "vehicle", "furniture", "fixture", "accumulated depreciation", "acc. dep"]):
+            already_classified_nca.add(id(i))
+        elif "goodwill" in nm or "trade name" in nm or "trademark" in nm or "patent" in nm or "brand" in nm:
+            already_classified_nca.add(id(i))
+        elif "other asset" in nm:
+            already_classified_nca.add(id(i))
+    # Everything else in non-current assets (e.g. CWIP, net block, etc.)
+    unclassified_nca = sum(abs(i.get("net_amount", 0.0)) for i in assets if id(i) not in already_classified_nca and i not in current_asset_items)
     
-    total_non_current_assets = investment + net_ppe + total_intangibles + other_assets
-    total_assets = sum(abs(i.get("net_amount", 0.0)) for i in assets) or (total_current_assets + total_non_current_assets)
+    total_non_current_assets = investment + net_ppe + total_intangibles + other_assets + unclassified_nca
+    explicit_total_assets = [i for i in latest_items if i.get("is_summary") and ("total asset" in str(i.get("account_name")).lower() or (str(i.get("account_name")).lower() in ["total", "total:"] and any(s in str(i.get("sheet")).lower() for s in ["balance", "data sheet"])))]
+    if explicit_total_assets:
+        total_assets = abs(explicit_total_assets[-1].get("net_amount", 0.0))
+    else:
+        total_assets = (total_current_assets + total_non_current_assets) if (total_current_assets + total_non_current_assets) > 0 else sum(abs(i.get("net_amount", 0.0)) for i in assets)
 
     # Liabilities & Equity details
     payables_items = [i for i in liabilities if "PAYABLE" in str(i.get("account_type")) or "payable" in str(i.get("account_name")).lower() or "creditor" in str(i.get("account_name")).lower()]
@@ -242,30 +280,41 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     }
 
     # 5. Cash Flow Statement (Extracted or Marked Unavailable)
-    cf_items = [i for i in latest_items if "cash flow" in str(i.get("sheet")).lower() or "cash flow" in str(i.get("account_name")).lower()]
+    cf_items = [i for i in latest_items if "cash flow" in str(i.get("sheet")).lower() or "cash flow" in str(i.get("account_name")).lower() or str(i.get("account_type", "")).startswith("CASH_FLOW")]
     if cf_items:
-        ocf = sum(i.get("net_amount", 0.0) for i in cf_items if "operating" in str(i.get("account_name")).lower())
-        icf = sum(i.get("net_amount", 0.0) for i in cf_items if "investing" in str(i.get("account_name")).lower())
-        fcf = sum(i.get("net_amount", 0.0) for i in cf_items if "financing" in str(i.get("account_name")).lower())
-        net_change = ocf + icf + fcf
-        cash_flow = {
-            "status": "Available",
-            "operating_activities": round(ocf, 2),
-            "investing_activities": round(icf, 2),
-            "financing_activities": round(fcf, 2),
-            "net_change_in_cash": round(net_change, 2)
-        }
-        cf_calc = round(ocf + icf + fcf, 2)
-        cf_diff = round(abs(cf_calc - net_change), 2)
-        cf_status = "PASS" if cf_diff <= 1.0 else "FAIL"
-        cf_explanation = "Operating + Investing + Financing cash flows equal Net Change in Cash." if cf_status == "PASS" else f"Cash flow equation mismatch: Sum (${cf_calc:,.2f}) != Net Change (${net_change:,.2f})"
+        ocf = sum(i.get("net_amount", 0.0) for i in cf_items if any(k in str(i.get("account_name")).lower() for k in ["operating", "operations", "ocf"]))
+        icf = sum(i.get("net_amount", 0.0) for i in cf_items if any(k in str(i.get("account_name")).lower() for k in ["investing", "icf"]))
+        fcf = sum(i.get("net_amount", 0.0) for i in cf_items if any(k in str(i.get("account_name")).lower() for k in ["financing", "fcf"]))
+        if ocf == 0.0 and icf == 0.0 and fcf == 0.0:
+            cash_flow = {
+                "status": "Not Available in Source Workbook",
+                "operating_activities": None,
+                "investing_activities": None,
+                "financing_activities": None,
+                "net_change_in_cash": None
+            }
+            cf_status = "NOT_AVAILABLE"
+            cf_explanation = "Cash Flow Validation Not Possible — Required Data Missing"
+        else:
+            net_change = ocf + icf + fcf
+            cash_flow = {
+                "status": "Available",
+                "operating_activities": round(ocf, 2),
+                "investing_activities": round(icf, 2),
+                "financing_activities": round(fcf, 2),
+                "net_change_in_cash": round(net_change, 2)
+            }
+            cf_calc = round(ocf + icf + fcf, 2)
+            cf_diff = round(abs(cf_calc - net_change), 2)
+            cf_status = "PASS" if cf_diff <= 1.0 else "FAIL"
+            cf_explanation = "Operating + Investing + Financing cash flows equal Net Change in Cash." if cf_status == "PASS" else f"Cash flow equation mismatch: Sum (${cf_calc:,.2f}) != Net Change (${net_change:,.2f})"
     else:
         cash_flow = {
             "status": "Not Available in Source Workbook",
-            "operating_activities": 0.0,
-            "investing_activities": 0.0,
-            "financing_activities": 0.0,
-            "net_change_in_cash": 0.0
+            "operating_activities": None,
+            "investing_activities": None,
+            "financing_activities": None,
+            "net_change_in_cash": None
         }
         cf_status = "NOT_AVAILABLE"
         cf_explanation = "Cash Flow Validation Not Possible — Required Data Missing"
@@ -309,17 +358,21 @@ def generate_financial_statements(items: List[Dict[str, Any]]) -> Dict[str, Any]
         }
 
     # Group items by year
-    years_found = sorted(list(set(str(i.get("year", "Current")) for i in items if i.get("year"))))
+    years_found = list(set(str(i.get("year", "Current")) for i in items if i.get("year")))
     if not years_found:
         years_found = ["Current"]
+    numeric_years = sorted([yr for yr in years_found if yr.isdigit() and len(yr) == 4], key=int)
+    if numeric_years:
+        target_year = numeric_years[-1]
+    else:
+        target_year = sorted(years_found)[-1] if years_found else "Current"
 
     by_year = {}
     for yr in years_found:
         yr_items = [i for i in items if str(i.get("year", "Current")) == yr]
         by_year[yr] = generate_statements_for_year(yr_items, yr, years_found)
 
-    target_year = years_found[-1]
-    result = dict(by_year[target_year])
+    result = dict(by_year.get(target_year, {}))
     result["by_year"] = by_year
     result["normalized_items"] = items
     return result

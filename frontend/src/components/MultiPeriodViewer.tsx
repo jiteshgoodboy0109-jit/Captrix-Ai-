@@ -28,11 +28,13 @@ export default function MultiPeriodViewer({ multiPeriod }: MultiPeriodViewerProp
   const bsComp = multiPeriod.comparative_balance_sheet || [];
   const marginTrends = multiPeriod.margin_trends || [];
 
-  const formatDollar = (val: number) => {
+  const formatDollar = (val: number | null | undefined) => {
+    if (val === null || val === undefined) return 'N/A';
     return `$${val.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   };
 
-  const getGrowthBadge = (val: number) => {
+  const getGrowthBadge = (val: number | null | undefined) => {
+    if (val === null || val === undefined) return <span className="text-xs font-medium text-slate-400">N/A</span>;
     const isPos = val >= 0;
     return (
       <span className={`inline-flex items-center gap-0.5 text-xs font-bold px-2 py-0.5 rounded-md border ${

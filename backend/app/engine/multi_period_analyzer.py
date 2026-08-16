@@ -1,9 +1,9 @@
 from typing import Dict, Any, List
 import math
 
-def calculate_cagr(start_val: float, end_val: float, num_years: int) -> float | None:
+def calculate_cagr(start_val: float | None, end_val: float | None, num_years: int) -> float | None:
     """Calculate Compound Annual Growth Rate (CAGR %) safely. Returns None if uncalculable or negative base."""
-    if start_val <= 0 or end_val <= 0 or num_years <= 0:
+    if start_val is None or end_val is None or start_val <= 0 or end_val <= 0 or num_years <= 0:
         return None
     try:
         cagr = (math.pow(end_val / start_val, 1.0 / num_years) - 1.0) * 100.0
@@ -11,9 +11,9 @@ def calculate_cagr(start_val: float, end_val: float, num_years: int) -> float | 
     except Exception:
         return None
 
-def calculate_yoy(val1: float, val2: float) -> float:
+def calculate_yoy(val1: float | None, val2: float | None) -> float:
     """Calculate Year-over-Year growth percentage safely."""
-    if val1 == 0:
+    if val1 is None or val2 is None or val1 == 0:
         return 0.0
     return round(((val2 - val1) / abs(val1)) * 100.0, 2)
 
@@ -41,19 +41,19 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
     # Helper function to get values safely
     def get_yr_values(y: str | None):
         if y is None:
-            return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+            return 0.0, None, None, 0.0, 0.0, 0.0
         stmt = by_year.get(y, {})
         inc = stmt.get("income_statement", {})
         bs = stmt.get("balance_sheet", {})
         
-        rev = inc.get("total_revenue", 0.0)
-        cogs = inc.get("cost_of_goods_sold", 0.0)
-        gp = inc.get("gross_profit", 0.0)
-        net = inc.get("net_income", 0.0)
+        rev = inc.get("total_revenue", 0.0) or 0.0
+        cogs = inc.get("cost_of_goods_sold")
+        gp = inc.get("gross_profit")
+        net = inc.get("net_income", 0.0) or 0.0
         
-        assets = bs.get("total_assets", 0.0)
+        assets = bs.get("total_assets", 0.0) or 0.0
         eq_dict = bs.get("equity", {})
-        eq = eq_dict.get("total_equity", 0.0) if isinstance(eq_dict, dict) else 0.0
+        eq = (eq_dict.get("total_equity", 0.0) if isinstance(eq_dict, dict) else 0.0) or 0.0
         
         return rev, cogs, gp, net, assets, eq
 
@@ -67,7 +67,7 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
     
     rev_cagr_opt = calculate_cagr(rev_y1, rev_y3, 2) if y1 is not None else None
     net_cagr_opt = calculate_cagr(net_y1, net_y3, 2) if y1 is not None else None
-    gp_cagr_opt = calculate_cagr(gp_y1, gp_y3, 2) if y1 is not None else None
+    gp_cagr_opt = calculate_cagr(gp_y1, gp_y3, 2) if (y1 is not None and gp_y1 is not None and gp_y3 is not None) else None
     assets_cagr_opt = calculate_cagr(assets_y1, assets_y3, 2) if y1 is not None else None
 
     revenue_cagr = rev_cagr_opt if rev_cagr_opt is not None else 0.0
@@ -84,13 +84,13 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
         inc_y = stmt_y.get("income_statement", {})
         bs_y = stmt_y.get("balance_sheet", {})
         
-        rev_y = inc_y.get("total_revenue", 0.0)
-        gp_y = inc_y.get("gross_profit", 0.0)
-        net_y = inc_y.get("net_income", 0.0)
+        rev_y = inc_y.get("total_revenue", 0.0) or 0.0
+        gp_y = inc_y.get("gross_profit")
+        net_y = inc_y.get("net_income", 0.0) or 0.0
         eq_y_dict = bs_y.get("equity", {})
-        eq_y = eq_y_dict.get("total_equity", 0.0) if isinstance(eq_y_dict, dict) else 0.0
+        eq_y = (eq_y_dict.get("total_equity", 0.0) if isinstance(eq_y_dict, dict) else 0.0) or 0.0
         
-        gm_y = round((gp_y / rev_y) * 100, 2) if rev_y > 0 else 0.0
+        gm_y = round((gp_y / rev_y) * 100, 2) if (rev_y > 0 and gp_y is not None) else 0.0
         np_y = round((net_y / rev_y) * 100, 2) if rev_y > 0 else 0.0
         roe_y = round((net_y / eq_y) * 100, 2) if eq_y > 0 else 0.0
         
