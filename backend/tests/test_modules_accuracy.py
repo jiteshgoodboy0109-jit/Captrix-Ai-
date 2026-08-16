@@ -65,17 +65,17 @@ def test_financial_ratio_mathematical_precision():
 
 
 def test_multi_period_cagr_and_yoy_accuracy():
-    # 3-year revenue: 100, 120, 144 -> CAGR should be sqrt(144/100) - 1 = 20.0%
-    cagr = calculate_cagr(100.0, 144.0, 3)
-    assert abs(cagr - 20.0) < 0.01
+    # 3-year revenue (FY23, FY24, FY25 -> 2 compounding periods): 100, 120, 144 -> CAGR = sqrt(144/100) - 1 = 20.0%
+    cagr = calculate_cagr(100.0, 144.0, 2)
+    assert cagr is not None and abs(cagr - 20.0) < 0.01
 
     # YoY growth: (120 - 100) / 100 * 100 = 20.0%
-    yoy = calculate_yoy(120.0, 100.0)
+    yoy = calculate_yoy(100.0, 120.0)
     assert abs(yoy - 20.0) < 0.01
 
-    # Zero beginning value edge case
-    assert calculate_cagr(0.0, 100.0, 3) == 0.0
-    assert calculate_yoy(100.0, 0.0) == 0.0
+    # Zero beginning value edge case returns None to avoid false 0% override
+    assert calculate_cagr(0.0, 100.0, 3) is None
+    assert calculate_yoy(0.0, 100.0) == 0.0
 
 
 def test_corporate_finance_npv_and_irr_accuracy():
@@ -98,3 +98,31 @@ def test_fuzzy_account_classification_accuracy():
     assert classify_account("Merchandise Inventory Stock") == "INVENTORY_ASSET"
     assert classify_account("Accounts Payable Creditors") == "PAYABLE_LIABILITY"
     assert classify_account("Common Capital Equity") == "EQUITY"
+
+
+def test_capital_budgeting_zero_fabrication_safety():
+    # Missing current assets and net income should mark capital budgeting non-calculable without fabricating $100k/$20k
+    empty_statements = {
+        "income_statement": {"total_revenue": 0.0, "net_income": 0.0},
+        "balance_sheet": {"current_assets": {"total_current_assets": 0.0}},
+        "cash_flow": {}
+    }
+    corp_fin = calculate_corporate_finance(empty_statements, {})
+    cb = corp_fin["capital_budgeting"]
+    assert cb["is_calculable"] is False
+    assert cb["initial_investment"] == 0.0
+    assert cb["projected_annual_fcf"] == 0.0
+    assert "NOT_CALCULABLE" in cb["verdict"]
+
+
+def test_beneish_tata_exact_accruals_integration():
+    from app.engine.risk_analyzer import calculate_risk_intelligence
+    statements = {
+        "income_statement": {"net_income": 100.0, "total_revenue": 1000.0, "ebit": 150.0},
+        "balance_sheet": {"total_assets": 500.0, "total_liabilities": 200.0, "current_assets": {"total_current_assets": 300.0}, "current_liabilities": {"total_current_liabilities": 100.0}},
+        "cash_flow": {"operating_activities": 80.0}
+    }
+    risk = calculate_risk_intelligence(statements, {})
+    # Exact accruals = net_inc (100) - ocf (80) = 20. TATA = 20 / 500 = 0.04
+    assert risk["beneish_m_score"]["tata_accruals_ratio"] == 0.04
+

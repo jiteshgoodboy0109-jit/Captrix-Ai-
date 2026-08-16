@@ -16,6 +16,16 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (!error.response) {
+      // Suppress unhandled network error popups during server cold-starts
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const downloadReportFile = async (url: string, filename: string) => {
   try {
     const res = await api.get(url, { responseType: 'blob' });

@@ -53,6 +53,14 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
         icon: AlertTriangle, 
         color: '#f59e0b' 
       };
+    } else if (status === 'NOT_CALCULABLE' || status === 'N/A' || status === 'DATA_MISSING') {
+      return {
+        label: 'DATA MISSING',
+        bg: 'bg-slate-100 text-slate-600 border-slate-200',
+        barBg: 'bg-slate-300',
+        icon: Info,
+        color: '#64748b'
+      };
     } else {
       return { 
         label: 'CRITICAL', 
@@ -81,20 +89,65 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
 
   const ratioList = flattenRatios();
 
-  // Helper to extract numerical benchmark target for visual bar math
-  const getNumericTarget = (benchmarkStr: string, val: number) => {
-    if (!benchmarkStr) return Math.max(val * 1.2, 10);
-    const cleaned = benchmarkStr.replace(/[^0-9.]/g, '');
-    const parsed = parseFloat(cleaned);
-    return isNaN(parsed) || parsed === 0 ? Math.max(val * 1.2, 10) : parsed;
-  };
+  // Helper to compute visual progress bar percentage and human-readable text
+  const getRatioBenchmarkMetrics = (val: number, benchmarkStr: string, isCalculable: boolean = true, status: string = '') => {
+    if (!isCalculable || status === 'NOT_CALCULABLE' || status === 'N/A') {
+      return { text: 'Data Missing', widthPct: 0 };
+    }
+    
+    if (val === null || val === undefined || isNaN(val)) {
+      return { text: 'Data Missing', widthPct: 0 };
+    }
 
-  // Helper to compute visual progress bar percentage (0 to 100)
-  const getProgressPercentage = (val: number, benchmarkStr: string) => {
-    const target = getNumericTarget(benchmarkStr, val);
-    if (target === 0) return 50;
-    const pct = (val / target) * 100;
-    return Math.min(Math.max(pct, 8), 100);
+    if (!benchmarkStr) {
+      if (val <= 0) return { text: '0% of target', widthPct: 4 };
+      return { text: '100% of target', widthPct: 100 };
+    }
+
+    // Check for range like "15% - 30%" or "4.0 - 8.0x"
+    const rangeMatch = benchmarkStr.match(/([\d.]+)\s*%\s*-\s*([\d.]+)\s*%/i) || benchmarkStr.match(/([\d.]+)\s*-\s*([\d.]+)/);
+    if (rangeMatch && !benchmarkStr.includes('<') && !benchmarkStr.includes('>')) {
+      const min = parseFloat(rangeMatch[1]);
+      const max = parseFloat(rangeMatch[2]);
+      if (val >= min && val <= max) {
+        return { text: '100% of target', widthPct: 100 };
+      } else if (val < min) {
+        const pct = min > 0 ? (val / min) * 100 : 0;
+        if (val <= 0) return { text: '0% of target', widthPct: 4 };
+        return { text: `${Math.round(pct)}% of target`, widthPct: Math.min(Math.max(pct, 4), 100) };
+      } else {
+        const pct = val > 0 ? (max / val) * 100 : 100;
+        return { text: `${Math.round(pct)}% of target`, widthPct: Math.min(Math.max(pct, 4), 100) };
+      }
+    }
+
+    // Check for less than target like "< 1.5" or "< 0.6"
+    if (benchmarkStr.includes('<')) {
+      const targetMatch = benchmarkStr.match(/[\d.]+/);
+      const target = targetMatch ? parseFloat(targetMatch[0]) : 1.5;
+      if (val <= target) {
+        return { text: '100% of target', widthPct: 100 };
+      } else {
+        const pct = target > 0 ? (target / val) * 100 : 50;
+        return { text: `${Math.round(pct)}% of target`, widthPct: Math.min(Math.max(pct, 4), 100) };
+      }
+    }
+
+    // Greater than target like "> 30%", "> 10%", "> 1.5", "> 5%"
+    const targetMatch = benchmarkStr.match(/[\d.]+/);
+    const target = targetMatch ? parseFloat(targetMatch[0]) : 10;
+    if (target === 0) return { text: '100% of target', widthPct: 100 };
+
+    if (val <= 0) {
+      return { text: val < 0 ? '0% of target (Negative)' : '0% of target', widthPct: 4 };
+    }
+
+    const realPct = (val / target) * 100;
+    const rounded = Math.round(realPct);
+    return {
+      text: `${rounded}% of target`,
+      widthPct: Math.min(Math.max(realPct, 4), 100)
+    };
   };
 
   // Prepare Chart Data Sets
@@ -291,7 +344,8 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
                   {[...liqRatios, ...solvRatios].slice(0, 5).map((item: any, i: number) => {
                     const badge = getStatusBadge(item.status);
                     const val = typeof item.value === 'number' ? item.value : parseFloat(item.value) || 0;
-                    const progressPct = getProgressPercentage(val, item.benchmark);
+                    const isCalculable = item.is_calculable !== false && item.status !== 'NOT_CALCULABLE';
+                    const metrics = getRatioBenchmarkMetrics(val, item.benchmark, isCalculable, item.status);
 
                     return (
                       <div key={i} className="space-y-1">
@@ -307,7 +361,7 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
                         <div className="relative w-full h-3 bg-slate-100/90 rounded-full overflow-hidden p-0.5 border border-slate-200/60">
                           <div
                             className={`h-full rounded-full transition-all duration-700 ${badge.barBg}`}
-                            style={{ width: `${progressPct}%` }}
+                            style={{ width: `${metrics.widthPct}%` }}
                           ></div>
                         </div>
                       </div>
@@ -373,7 +427,8 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
               const badge = getStatusBadge(r.status);
               const BadgeIcon = badge.icon;
               const numericVal = typeof r.value === 'number' ? r.value : parseFloat(r.value) || 0;
-              const progressPct = getProgressPercentage(numericVal, r.benchmark);
+              const isCalculable = r.is_calculable !== false && r.status !== 'NOT_CALCULABLE';
+              const metrics = getRatioBenchmarkMetrics(numericVal, r.benchmark, isCalculable, r.status);
 
               return (
                 <div
@@ -403,12 +458,12 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
                     <div className="my-3 space-y-1">
                       <div className="flex justify-between text-[10px] font-bold text-slate-400">
                         <span>Benchmark Scale</span>
-                        <span>{progressPct.toFixed(0)}% of target</span>
+                        <span>{metrics.text}</span>
                       </div>
                       <div className="w-full h-2.5 bg-slate-100/90 rounded-full overflow-hidden p-0.5 border border-slate-200/60">
                         <div
                           className={`h-full rounded-full transition-all duration-500 ${badge.barBg}`}
-                          style={{ width: `${progressPct}%` }}
+                          style={{ width: `${metrics.widthPct}%` }}
                         ></div>
                       </div>
                     </div>

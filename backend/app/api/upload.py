@@ -9,6 +9,9 @@ from app.engine.document_parser import parse_workbook, sanitize_json_data, clean
 from app.engine.statement_generator import generate_financial_statements
 from app.engine.financial_analyzer import calculate_financial_ratios, calculate_corporate_finance
 from app.engine.ai_insights import generate_ai_insights
+from app.engine.canonical_model import build_canonical_dataset
+from app.engine.reconciliation import perform_source_to_result_reconciliation
+from app.engine.quality_engine import compute_financial_quality_score
 
 router = APIRouter(prefix="/api/upload", tags=["Upload & AI Processing"])
 
@@ -92,7 +95,17 @@ async def upload_financial_file(
                 debit=clean_value(item.get("debit", 0.0)),
                 credit=clean_value(item.get("credit", 0.0)),
                 net_amount=clean_value(item.get("net_amount", 0.0)),
-                metadata_json={"sheet": item.get("sheet", "Sheet1")}
+                metadata_json={
+                    "sheet": item.get("sheet", "Sheet1"),
+                    "row": item.get("row", 1),
+                    "column": item.get("column", "A"),
+                    "year": item.get("year", "Current"),
+                    "unit": item.get("unit", "Units"),
+                    "currency": item.get("currency", "USD"),
+                    "source_label": item.get("source_label", ""),
+                    "source_value": item.get("source_value", 0.0),
+                    "is_summary": item.get("is_summary", False)
+                }
             )
             db.add(fd)
 
@@ -128,11 +141,16 @@ async def upload_financial_file(
         )
         db.add(corp_record)
 
-        # 7. AI Insights & Health Score Engine
+        # 7. Canonical Dataset, Reconciliation & Quality Engine
+        canonical_dataset = sanitize_json_data(build_canonical_dataset(items, filename))
+        reconciliation_report = sanitize_json_data(perform_source_to_result_reconciliation(canonical_dataset, statements, ratios))
+        quality_report = sanitize_json_data(compute_financial_quality_score(reconciliation_report, statements.get("validation_report", {})))
+
+        # 8. AI Insights & Health Score Engine
         ai_insights = sanitize_json_data(generate_ai_insights(statements, ratios, corp_fin))
         ai_record = AIReport(
             upload_id=upload.id,
-            health_score=clean_value(ai_insights.get("health_score", 85.0)),
+            health_score=clean_value(quality_report.get("quality_score", ai_insights.get("health_score", 85.0))),
             executive_summary=ai_insights.get("executive_summary", ""),
             strengths=ai_insights.get("strengths", []),
             weaknesses=ai_insights.get("weaknesses", []),
@@ -140,12 +158,12 @@ async def upload_financial_file(
         )
         db.add(ai_record)
 
-        # 8. Save Report History record automatically
+        # 9. Save Report History record automatically
         history_record = History(
             user_id=current_user.id,
             upload_id=upload.id,
             company_name=final_company_name,
-            health_score=clean_value(ai_insights.get("health_score", 85.0)),
+            health_score=clean_value(quality_report.get("quality_score", 85.0)),
             status="COMPLETED",
             report_name=f"{final_company_name} - Financial Audit Report"
         )
@@ -158,8 +176,10 @@ async def upload_financial_file(
             "filename": file.filename,
             "company_name": final_company_name,
             "sheet_names": sheet_names,
-            "health_score": clean_value(ai_insights.get("health_score", 85.0)),
-            "message": "Workbook processed, analyzed, and saved to Report History successfully."
+            "health_score": clean_value(quality_report.get("quality_score", 85.0)),
+            "quality_report": quality_report,
+            "reconciliation": reconciliation_report,
+            "message": "Workbook processed, reconciled, analyzed, and saved to Report History successfully."
         }
     except HTTPException as he:
         print(f"HTTPException in upload: {he.detail}")
@@ -223,7 +243,16 @@ async def load_sample_file(
                 debit=clean_value(item.get("debit", 0.0)),
                 credit=clean_value(item.get("credit", 0.0)),
                 net_amount=clean_value(item.get("net_amount", 0.0)),
-                metadata_json={"sheet": item.get("sheet", "Sheet1")}
+                metadata_json={
+                    "sheet": item.get("sheet", "Sheet1"),
+                    "row": item.get("row", 1),
+                    "column": item.get("column", "A"),
+                    "year": item.get("year", "Current"),
+                    "unit": item.get("unit", "Units"),
+                    "currency": item.get("currency", "USD"),
+                    "source_label": item.get("source_label", ""),
+                    "source_value": item.get("source_value", 0.0)
+                }
             )
             db.add(fd)
 

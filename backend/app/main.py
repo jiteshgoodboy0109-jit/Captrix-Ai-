@@ -7,6 +7,7 @@ from app.api.analysis import router as analysis_router
 from app.api.history import router as history_router
 from app.api.chat import router as chat_router
 from app.api.reports import router as reports_router
+from app.api.models_api import router as models_router
 
 from app.db.database import engine, Base
 from app.db.firebase import init_firebase
@@ -42,6 +43,7 @@ app.include_router(analysis_router)
 app.include_router(history_router)
 app.include_router(chat_router)
 app.include_router(reports_router)
+app.include_router(models_router)
 
 @app.get("/")
 def read_root():

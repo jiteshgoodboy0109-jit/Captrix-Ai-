@@ -10,6 +10,9 @@ import AIInsightsPanel from '@/components/AIInsightsPanel';
 import ChatbotDrawer from '@/components/ChatbotDrawer';
 import FinancialCharts from '@/components/FinancialCharts';
 import MultiPeriodViewer from '@/components/MultiPeriodViewer';
+import DupontViewer from '@/components/DupontViewer';
+import RiskIntelligenceViewer from '@/components/RiskIntelligenceViewer';
+import AuditorWorkingPapers from '@/components/AuditorWorkingPapers';
 import { 
   Download, 
   FileSpreadsheet, 
@@ -22,12 +25,15 @@ import {
   ArrowLeft,
   UploadCloud,
   ChevronDown,
-  TrendingUp
+  TrendingUp,
+  GitFork,
+  ShieldAlert,
+  FileCheck
 } from 'lucide-react';
 import Link from 'next/link';
 import { syncAnalysisToFirestore } from '@/lib/firebase';
 
-export default function AnalysisWorkspace() {
+function AnalysisContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -137,7 +143,7 @@ export default function AnalysisWorkspace() {
     );
   }
 
-  const { company_name, filename, statements, ratios, corporate_finance, ai_report } = data;
+  const { company_name, filename, statements, ratios, corporate_finance, ai_report, dupont_analysis, risk_intelligence, audit_report } = data;
 
   return (
     <div className="space-y-6">
@@ -190,8 +196,11 @@ export default function AnalysisWorkspace() {
       <div className="flex items-center gap-2 border-b border-slate-200 pb-1 overflow-x-auto">
         {[
           { key: 'overview', label: 'Executive Overview', icon: BrainCircuit },
+          { key: 'audit', label: 'Auditor Working Papers', icon: FileCheck },
           { key: 'statements', label: 'Financial Statements', icon: FileText },
-          { key: 'trends', label: 'Multi-Year Trends & CAGR', icon: TrendingUp },
+          { key: 'trends', label: 'Multi-Year Trends & Forecast', icon: TrendingUp },
+          { key: 'dupont', label: 'DuPont ROE Tree', icon: GitFork },
+          { key: 'risk', label: 'Solvency Risk (Z-Score)', icon: ShieldAlert },
           { key: 'ratios', label: 'Ratio Analysis', icon: LineChart },
           { key: 'corp_fin', label: 'Corporate Finance', icon: Building2 },
           { key: 'insights', label: 'AI Business Insights', icon: BrainCircuit },
@@ -236,12 +245,24 @@ export default function AnalysisWorkspace() {
         </div>
       )}
 
+      {activeTab === 'audit' && (
+        <AuditorWorkingPapers auditReport={audit_report} companyName={company_name} />
+      )}
+
       {activeTab === 'statements' && (
         <StatementViewer statements={statements} />
       )}
 
       {activeTab === 'trends' && (
         <MultiPeriodViewer multiPeriod={data.multi_period} />
+      )}
+
+      {activeTab === 'dupont' && (
+        <DupontViewer dupontData={dupont_analysis} />
+      )}
+
+      {activeTab === 'risk' && (
+        <RiskIntelligenceViewer riskData={risk_intelligence} />
       )}
 
       {activeTab === 'ratios' && (
@@ -262,5 +283,18 @@ export default function AnalysisWorkspace() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AnalysisWorkspace() {
+  return (
+    <React.Suspense fallback={
+      <div className="py-16 text-center space-y-3">
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600 mx-auto" />
+        <p className="text-xs text-slate-500 font-medium">Loading Financial Workspace...</p>
+      </div>
+    }>
+      <AnalysisContent />
+    </React.Suspense>
   );
 }

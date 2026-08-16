@@ -266,6 +266,48 @@ export default function MultiPeriodViewer({ multiPeriod }: MultiPeriodViewerProp
           {multiPeriod.ai_trajectory}
         </p>
       </div>
+
+      {/* 3-YEAR PREDICTIVE AI FORECASTING SECTION */}
+      {multiPeriod.three_year_forecast && (
+        <div className="glass-card rounded-2xl p-5 border border-cyan-200 bg-gradient-to-r from-cyan-50/30 via-white to-brand-50/20 space-y-4 shadow-sm">
+          <div className="flex justify-between items-center border-b pb-3 border-cyan-100">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-cyan-600" />
+              <h4 className="text-sm font-bold text-slate-900">3-Year AI Predictive Financial Forecast (Y+1, Y+2, Y+3)</h4>
+            </div>
+            <span className="text-[10px] font-extrabold text-cyan-700 bg-cyan-50 px-2.5 py-0.5 rounded-full border border-cyan-200">
+              GROWTH BASELINE: {multiPeriod.three_year_forecast.growth_rate_used_pct}% p.a.
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {multiPeriod.three_year_forecast.projections?.map((proj: any, idx: number) => (
+              <div key={idx} className="p-4 bg-white rounded-2xl border border-slate-200 space-y-2.5 shadow-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-black text-slate-900">{proj.period}</span>
+                  <span className="text-[9px] font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-md border border-cyan-100">
+                    {proj.confidence_range}
+                  </span>
+                </div>
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500 font-medium">Projected Revenue:</span>
+                    <span className="font-extrabold text-slate-900">{formatDollar(proj.projected_revenue)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500 font-medium">Projected Net Income:</span>
+                    <span className="font-extrabold text-emerald-700">{formatDollar(proj.projected_net_income)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500 font-medium">Projected Total Assets:</span>
+                    <span className="font-bold text-slate-700">{formatDollar(proj.projected_assets)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

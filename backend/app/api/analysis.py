@@ -1,9 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.database import get_db
-from app.db.models import Upload, Statement, Ratio, CorporateFinance, AIReport, Company
+from app.db.models import Upload, Statement, Ratio, CorporateFinance, AIReport, Company, FinancialData
 from app.auth.jwt import get_current_user, User
+from app.engine.statement_generator import generate_financial_statements
 from app.engine.multi_period_analyzer import generate_multi_period_analysis
+from app.engine.canonical_model import build_canonical_dataset
+from app.engine.reconciliation import perform_source_to_result_reconciliation
+from app.engine.quality_engine import compute_financial_quality_score
+from app.engine.dupont_analyzer import calculate_dupont_analysis
+from app.engine.risk_analyzer import calculate_risk_intelligence
+from app.engine.auditor_engine import perform_full_financial_audit
 
 router = APIRouter(prefix="/api/analysis", tags=["Financial Analysis"])
 
@@ -15,23 +22,52 @@ def get_analysis_results(upload_id: int, db: Session = Depends(get_db), current_
         raise HTTPException(status_code=404, detail="Upload analysis not found or access denied.")
 
     company = db.query(Company).filter(Company.id == upload.company_id).first()
-    stmt = db.query(Statement).filter(Statement.upload_id == upload_id).first()
     ratio = db.query(Ratio).filter(Ratio.upload_id == upload_id).first()
     corp = db.query(CorporateFinance).filter(CorporateFinance.upload_id == upload_id).first()
     ai_report = db.query(AIReport).filter(AIReport.upload_id == upload_id).first()
 
-    if not stmt or not ratio or not corp or not ai_report:
+    if not ratio or not corp or not ai_report:
         raise HTTPException(status_code=404, detail="Incomplete analysis data.")
 
-    statements_payload = {
-        "balance_sheet": stmt.balance_sheet,
-        "income_statement": stmt.income_statement,
-        "cash_flow": stmt.cash_flow,
-        "trial_balance": stmt.trial_balance,
-        "ledger_summary": stmt.ledger_summary
+    # Reconstruct statements payload dynamically from database line items
+    fd_items = db.query(FinancialData).filter(FinancialData.upload_id == upload_id).all()
+    items = []
+    for f in fd_items:
+        meta = f.metadata_json or {}
+        items.append({
+            "account_code": f.account_code,
+            "account_name": f.account_name,
+            "account_type": f.account_type,
+            "debit": f.debit,
+            "credit": f.credit,
+            "net_amount": f.net_amount,
+            "sheet": meta.get("sheet", "Sheet1"),
+            "row": meta.get("row", 1),
+            "column": meta.get("column", "A"),
+            "year": meta.get("year", "Current"),
+            "unit": meta.get("unit", "Units"),
+            "currency": meta.get("currency", "USD"),
+            "source_label": meta.get("source_label", f.account_name),
+            "source_value": meta.get("source_value", f.net_amount),
+            "is_summary": meta.get("is_summary", False)
+        })
+    statements_payload = generate_financial_statements(items)
+    multi_period = generate_multi_period_analysis(statements_payload)
+
+    ratios_dict = {
+        "profitability": ratio.profitability,
+        "liquidity": ratio.liquidity,
+        "solvency": ratio.solvency,
+        "efficiency": ratio.efficiency
     }
 
-    multi_period = generate_multi_period_analysis(statements_payload)
+    dupont_analysis = calculate_dupont_analysis(statements_payload, ratios_dict)
+    risk_intelligence = calculate_risk_intelligence(statements_payload, ratios_dict)
+    audit_report = perform_full_financial_audit(statements_payload, ratios_dict)
+
+    canonical_dataset = build_canonical_dataset(items, upload.filename)
+    reconciliation = perform_source_to_result_reconciliation(canonical_dataset, statements_payload, ratios_dict)
+    quality_report = compute_financial_quality_score(reconciliation, statements_payload.get("validation_report", {}))
 
     return {
         "upload_id": upload.id,
@@ -39,21 +75,22 @@ def get_analysis_results(upload_id: int, db: Session = Depends(get_db), current_
         "filename": upload.filename,
         "sheet_names": upload.sheet_names,
         "created_at": upload.created_at,
+        "health_score": quality_report.get("quality_score", ai_report.health_score),
+        "quality_report": quality_report,
+        "reconciliation": reconciliation,
         "statements": statements_payload,
         "multi_period": multi_period,
-        "ratios": {
-            "profitability": ratio.profitability,
-            "liquidity": ratio.liquidity,
-            "solvency": ratio.solvency,
-            "efficiency": ratio.efficiency
-        },
+        "dupont_analysis": dupont_analysis,
+        "risk_intelligence": risk_intelligence,
+        "audit_report": audit_report,
+        "ratios": ratios_dict,
         "corporate_finance": {
             "capital_budgeting": corp.capital_budgeting,
             "capital_structure": corp.capital_structure,
             "working_capital_cycle": corp.working_capital_cycle
         },
         "ai_report": {
-            "health_score": ai_report.health_score,
+            "health_score": quality_report.get("quality_score", ai_report.health_score),
             "executive_summary": ai_report.executive_summary,
             "strengths": ai_report.strengths,
             "weaknesses": ai_report.weaknesses,

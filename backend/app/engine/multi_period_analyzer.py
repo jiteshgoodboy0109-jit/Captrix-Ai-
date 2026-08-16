@@ -1,15 +1,15 @@
 from typing import Dict, Any, List
 import math
 
-def calculate_cagr(start_val: float, end_val: float, num_years: int) -> float:
-    """Calculate Compound Annual Growth Rate (CAGR %) safely."""
+def calculate_cagr(start_val: float, end_val: float, num_years: int) -> float | None:
+    """Calculate Compound Annual Growth Rate (CAGR %) safely. Returns None if uncalculable or negative base."""
     if start_val <= 0 or end_val <= 0 or num_years <= 0:
-        return 0.0
+        return None
     try:
         cagr = (math.pow(end_val / start_val, 1.0 / num_years) - 1.0) * 100.0
         return round(cagr, 2)
     except Exception:
-        return 0.0
+        return None
 
 def calculate_yoy(val1: float, val2: float) -> float:
     """Calculate Year-over-Year growth percentage safely."""
@@ -22,98 +22,172 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
     Generates 3-Year Comparative Financial Statements, YoY Growth Rates, CAGR %,
     Margin Evolution, and AI Multi-Period Trajectory Assessment.
     """
-    inc = statements.get("income_statement", {})
-    bs = statements.get("balance_sheet", {})
+    by_year = statements.get("by_year", {})
+    years_sorted = sorted([y for y in by_year.keys() if y != "Current"])
+    
+    if not by_year or not years_sorted:
+        # Fallback for single-period or legacy statements payload
+        by_year = {"Current": statements}
+        years_sorted = ["Current"]
 
-    rev_curr = inc.get("total_revenue", 1000000.0)
-    cogs_curr = inc.get("cost_of_goods_sold", 400000.0)
-    gp_curr = inc.get("gross_profit", 600000.0)
-    opex_curr = inc.get("operating_expenses", 300000.0)
-    ebit_curr = inc.get("ebit", 300000.0)
-    net_curr = inc.get("net_income", 220000.0)
+    # Map the sorted years to the slot variables: oldest, middle, latest
+    if len(years_sorted) >= 3:
+        y1, y2, y3 = years_sorted[-3], years_sorted[-2], years_sorted[-1]
+    elif len(years_sorted) == 2:
+        y1, y2, y3 = None, years_sorted[0], years_sorted[1]
+    else: # len == 1
+        y1, y2, y3 = None, None, years_sorted[0]
 
-    assets_curr = bs.get("total_assets", 1200000.0)
-    liab_curr = bs.get("total_liabilities", 450000.0)
-    equity_curr = bs.get("equity", {}).get("total_equity", 750000.0)
-    wc_curr = bs.get("working_capital", 350000.0)
+    # Helper function to get values safely
+    def get_yr_values(y: str | None):
+        if y is None:
+            return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        stmt = by_year.get(y, {})
+        inc = stmt.get("income_statement", {})
+        bs = stmt.get("balance_sheet", {})
+        
+        rev = inc.get("total_revenue", 0.0)
+        cogs = inc.get("cost_of_goods_sold", 0.0)
+        gp = inc.get("gross_profit", 0.0)
+        net = inc.get("net_income", 0.0)
+        
+        assets = bs.get("total_assets", 0.0)
+        eq_dict = bs.get("equity", {})
+        eq = eq_dict.get("total_equity", 0.0) if isinstance(eq_dict, dict) else 0.0
+        
+        return rev, cogs, gp, net, assets, eq
 
-    # Back-model 3-Year Historical Growth Path (FY23 -> FY24 -> FY25)
-    # Assumes historical expansion rate of ~8-12% for realistic trend baseline
-    rev_fy23 = round(rev_curr * 0.81, 2)
-    rev_fy24 = round(rev_curr * 0.91, 2)
-    rev_fy25 = round(rev_curr, 2)
+    rev_y3, cogs_y3, gp_y3, net_y3, assets_y3, equity_y3 = get_yr_values(y3)
+    rev_y2, cogs_y2, gp_y2, net_y2, assets_y2, equity_y2 = get_yr_values(y2)
+    rev_y1, cogs_y1, gp_y1, net_y1, assets_y1, equity_y1 = get_yr_values(y1)
 
-    cogs_fy23 = round(cogs_curr * 0.83, 2)
-    cogs_fy24 = round(cogs_curr * 0.92, 2)
-    cogs_fy25 = round(cogs_curr, 2)
+    # 1. YoY Growth Rates & CAGR
+    revenue_growth_24_25 = calculate_yoy(rev_y2, rev_y3) if y2 is not None else 0.0
+    net_growth_24_25 = calculate_yoy(net_y2, net_y3) if y2 is not None else 0.0
+    
+    rev_cagr_opt = calculate_cagr(rev_y1, rev_y3, 2) if y1 is not None else None
+    net_cagr_opt = calculate_cagr(net_y1, net_y3, 2) if y1 is not None else None
+    gp_cagr_opt = calculate_cagr(gp_y1, gp_y3, 2) if y1 is not None else None
+    assets_cagr_opt = calculate_cagr(assets_y1, assets_y3, 2) if y1 is not None else None
 
-    gp_fy23 = round(rev_fy23 - cogs_fy23, 2)
-    gp_fy24 = round(rev_fy24 - cogs_fy24, 2)
-    gp_fy25 = round(rev_fy25 - cogs_fy25, 2)
-
-    net_fy23 = round(net_curr * 0.74, 2)
-    net_fy24 = round(net_curr * 0.87, 2)
-    net_fy25 = round(net_curr, 2)
-
-    assets_fy23 = round(assets_curr * 0.84, 2)
-    assets_fy24 = round(assets_curr * 0.92, 2)
-    assets_fy25 = round(assets_curr, 2)
-
-    equity_fy23 = round(equity_curr * 0.80, 2)
-    equity_fy24 = round(equity_curr * 0.90, 2)
-    equity_fy25 = round(equity_curr, 2)
-
-    # 1. YoY Growth Rates
-    revenue_growth_23_24 = calculate_yoy(rev_fy23, rev_fy24)
-    revenue_growth_24_25 = calculate_yoy(rev_fy24, rev_fy25)
-    revenue_cagr = calculate_cagr(rev_fy23, rev_fy25, 2)
-
-    net_growth_23_24 = calculate_yoy(net_fy23, net_fy24)
-    net_growth_24_25 = calculate_yoy(net_fy24, net_fy25)
-    net_cagr = calculate_cagr(net_fy23, net_fy25, 2)
-
-    gp_cagr = calculate_cagr(gp_fy23, gp_fy25, 2)
-    assets_cagr = calculate_cagr(assets_fy23, assets_fy25, 2)
+    revenue_cagr = rev_cagr_opt if rev_cagr_opt is not None else 0.0
+    net_cagr = net_cagr_opt if net_cagr_opt is not None else 0.0
+    gp_cagr = gp_cagr_opt if gp_cagr_opt is not None else 0.0
+    assets_cagr = assets_cagr_opt if assets_cagr_opt is not None else 0.0
 
     # 2. Margin Evolution Trend (%)
-    gm_fy23 = round((gp_fy23 / rev_fy23) * 100, 2) if rev_fy23 > 0 else 0.0
-    gm_fy24 = round((gp_fy24 / rev_fy24) * 100, 2) if rev_fy24 > 0 else 0.0
-    gm_fy25 = round((gp_fy25 / rev_fy25) * 100, 2) if rev_fy25 > 0 else 0.0
-
-    np_fy23 = round((net_fy23 / rev_fy23) * 100, 2) if rev_fy23 > 0 else 0.0
-    np_fy24 = round((net_fy24 / rev_fy24) * 100, 2) if rev_fy24 > 0 else 0.0
-    np_fy25 = round((net_fy25 / rev_fy25) * 100, 2) if rev_fy25 > 0 else 0.0
-
-    roe_fy23 = round((net_fy23 / equity_fy23) * 100, 2) if equity_fy23 > 0 else 0.0
-    roe_fy24 = round((net_fy24 / equity_fy24) * 100, 2) if equity_fy24 > 0 else 0.0
-    roe_fy25 = round((net_fy25 / equity_fy25) * 100, 2) if equity_fy25 > 0 else 0.0
+    margin_trends = []
+    for y in [y1, y2, y3]:
+        if y is None:
+            continue
+        stmt_y = by_year[y]
+        inc_y = stmt_y.get("income_statement", {})
+        bs_y = stmt_y.get("balance_sheet", {})
+        
+        rev_y = inc_y.get("total_revenue", 0.0)
+        gp_y = inc_y.get("gross_profit", 0.0)
+        net_y = inc_y.get("net_income", 0.0)
+        eq_y_dict = bs_y.get("equity", {})
+        eq_y = eq_y_dict.get("total_equity", 0.0) if isinstance(eq_y_dict, dict) else 0.0
+        
+        gm_y = round((gp_y / rev_y) * 100, 2) if rev_y > 0 else 0.0
+        np_y = round((net_y / rev_y) * 100, 2) if rev_y > 0 else 0.0
+        roe_y = round((net_y / eq_y) * 100, 2) if eq_y > 0 else 0.0
+        
+        margin_trends.append({
+            "period": f"FY{y}" if y != "Current" else "Current",
+            "gross_margin": gm_y,
+            "net_margin": np_y,
+            "roe": roe_y
+        })
 
     # 3. Comparative Financial Statements Summary Table
     comparative_income_statement = [
-        {"metric": "Gross Revenue", "fy2023": rev_fy23, "fy2024": rev_fy24, "fy2025": rev_fy25, "yoy_24_25": revenue_growth_24_25, "cagr_3yr": revenue_cagr},
-        {"metric": "Cost of Goods Sold (COGS)", "fy2023": cogs_fy23, "fy2024": cogs_fy24, "fy2025": cogs_fy25, "yoy_24_25": calculate_yoy(cogs_fy24, cogs_fy25), "cagr_3yr": calculate_cagr(cogs_fy23, cogs_fy25, 2)},
-        {"metric": "Gross Profit", "fy2023": gp_fy23, "fy2024": gp_fy24, "fy2025": gp_fy25, "yoy_24_25": calculate_yoy(gp_fy24, gp_fy25), "cagr_3yr": gp_cagr},
-        {"metric": "Net Income", "fy2023": net_fy23, "fy2024": net_fy24, "fy2025": net_fy25, "yoy_24_25": net_growth_24_25, "cagr_3yr": net_cagr},
+        {"metric": "Gross Revenue", "fy2023": rev_y1, "fy2024": rev_y2, "fy2025": rev_y3, "yoy_24_25": revenue_growth_24_25, "cagr_3yr": revenue_cagr},
+        {"metric": "Cost of Goods Sold (COGS)", "fy2023": cogs_y1, "fy2024": cogs_y2, "fy2025": cogs_y3, "yoy_24_25": calculate_yoy(cogs_y2, cogs_y3) if y2 is not None else 0.0, "cagr_3yr": gp_cagr},
+        {"metric": "Gross Profit", "fy2023": gp_y1, "fy2024": gp_y2, "fy2025": gp_y3, "yoy_24_25": calculate_yoy(gp_y2, gp_y3) if y2 is not None else 0.0, "cagr_3yr": gp_cagr},
+        {"metric": "Net Income", "fy2023": net_y1, "fy2024": net_y2, "fy2025": net_y3, "yoy_24_25": net_growth_24_25, "cagr_3yr": net_cagr},
     ]
 
     comparative_balance_sheet = [
-        {"metric": "Total Assets", "fy2023": assets_fy23, "fy2024": assets_fy24, "fy2025": assets_fy25, "yoy_24_25": calculate_yoy(assets_fy24, assets_fy25), "cagr_3yr": assets_cagr},
-        {"metric": "Total Shareholders' Equity", "fy2023": equity_fy23, "fy2024": equity_fy24, "fy2025": equity_fy25, "yoy_24_25": calculate_yoy(equity_fy24, equity_fy25), "cagr_3yr": calculate_cagr(equity_fy23, equity_fy25, 2)},
-    ]
-
-    margin_trends = [
-        {"period": "FY2023", "gross_margin": gm_fy23, "net_margin": np_fy23, "roe": roe_fy23},
-        {"period": "FY2024", "gross_margin": gm_fy24, "net_margin": np_fy24, "roe": roe_fy24},
-        {"period": "FY2025", "gross_margin": gm_fy25, "net_margin": np_fy25, "roe": roe_fy25},
+        {"metric": "Total Assets", "fy2023": assets_y1, "fy2024": assets_y2, "fy2025": assets_y3, "yoy_24_25": calculate_yoy(assets_y2, assets_y3) if y2 is not None else 0.0, "cagr_3yr": assets_cagr},
+        {"metric": "Total Shareholders' Equity", "fy2023": equity_y1, "fy2024": equity_y2, "fy2025": equity_y3, "yoy_24_25": calculate_yoy(equity_y2, equity_y3) if y2 is not None else 0.0, "cagr_3yr": calculate_cagr(equity_y1, equity_y3, 2) if (y1 is not None and calculate_cagr(equity_y1, equity_y3, 2) is not None) else 0.0},
     ]
 
     # AI Trajectory Commentary
-    ai_trajectory = (
-        f"The company demonstrates a healthy 3-year revenue CAGR of {revenue_cagr}% alongside "
-        f"a net income CAGR of {net_cagr}%. Gross margin evolved from {gm_fy23}% in FY2023 to {gm_fy25}% in FY2025, "
-        f"indicating effective cost management and margin expansion. Return on Equity (ROE) expanded to {roe_fy25}%, "
-        f"reflecting compounding equity value for shareholders."
-    )
+    if y1 is not None:
+        gm_y1 = margin_trends[0]["gross_margin"]
+        gm_y3 = margin_trends[2]["gross_margin"]
+        roe_y3 = margin_trends[2]["roe"]
+        ai_trajectory = (
+            f"The company demonstrates a 3-year revenue CAGR of {revenue_cagr}% alongside "
+            f"a net income CAGR of {net_cagr}%. Gross margin evolved from {gm_y1}% in FY{y1} to {gm_y3}% in FY{y3}, "
+            f"indicating effective cost management. Return on Equity (ROE) expanded to {roe_y3}%, "
+            f"reflecting compounding equity value for shareholders."
+        )
+    elif y2 is not None:
+        gm_y2 = margin_trends[0]["gross_margin"]
+        gm_y3 = margin_trends[1]["gross_margin"]
+        roe_y3 = margin_trends[1]["roe"]
+        ai_trajectory = (
+            f"Comparative multi-period analysis between FY{y2} and FY{y3} shows "
+            f"YoY revenue growth of {revenue_growth_24_25}% and YoY net income growth of {net_growth_24_25}%. "
+            f"Gross margin evolved from {gm_y2}% in FY{y2} to {gm_y3}% in FY{y3}, with a Return on Equity (ROE) of {roe_y3}%."
+        )
+    else:
+        gm_y3 = margin_trends[0]["gross_margin"]
+        roe_y3 = margin_trends[0]["roe"]
+        ai_trajectory = (
+            f"Single-period financial statements parsed for FY{y3}. "
+            f"Gross margin stands at {gm_y3}% and Return on Equity (ROE) is {roe_y3}%. "
+            f"Multi-year comparative history was not available in the source workbook."
+        )
+
+    # Determine growth rate for forecast projections
+    if rev_cagr_opt is not None:
+        forecast_rev_g = min(max(rev_cagr_opt, -10.0), 20.0)
+    elif y2 is not None and revenue_growth_24_25 != 0.0:
+        forecast_rev_g = min(max(revenue_growth_24_25, -10.0), 20.0)
+    else:
+        forecast_rev_g = 5.0  # Default single-period baseline forecast assumption
+
+    if net_cagr_opt is not None:
+        forecast_net_g = min(max(net_cagr_opt, -10.0), 20.0)
+    elif y2 is not None and net_growth_24_25 != 0.0:
+        forecast_net_g = min(max(net_growth_24_25, -10.0), 20.0)
+    else:
+        forecast_net_g = forecast_rev_g
+
+    if assets_cagr_opt is not None:
+        forecast_asset_g = min(max(assets_cagr_opt, -10.0), 15.0)
+    else:
+        forecast_asset_g = min(max(forecast_rev_g * 0.8, -10.0), 15.0)
+
+    # Calculate 3-Year Forecast Projections
+    projections = []
+    net_margin_y3 = (net_y3 / rev_y3) if rev_y3 > 0 else 0.0
+
+    for t, label, conf in [
+        (1, "Y+1 (Forecast)", "High Confidence (Base Case)"),
+        (2, "Y+2 (Forecast)", "Moderate Confidence"),
+        (3, "Y+3 (Forecast)", "Strategic Long-Term Case")
+    ]:
+        proj_rev = round(rev_y3 * ((1.0 + (forecast_rev_g / 100.0)) ** t), 2)
+        proj_assets = round(assets_y3 * ((1.0 + (forecast_asset_g / 100.0)) ** t), 2)
+        
+        if net_y3 > 0:
+            proj_net = round(proj_rev * net_margin_y3, 2)
+        else:
+            # If current net income is loss, project operating improvement from revenue growth or apply net growth rate
+            proj_net = round(net_y3 * ((1.0 - (forecast_rev_g / 100.0)) if forecast_rev_g > 0 else (1.0 + abs(forecast_rev_g) / 100.0)) ** t, 2)
+
+        projections.append({
+            "period": label,
+            "projected_revenue": proj_rev,
+            "projected_net_income": proj_net,
+            "projected_assets": proj_assets,
+            "confidence_range": conf
+        })
 
     return {
         "cagr_metrics": {
@@ -129,5 +203,10 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
         "comparative_income_statement": comparative_income_statement,
         "comparative_balance_sheet": comparative_balance_sheet,
         "margin_trends": margin_trends,
-        "ai_trajectory": ai_trajectory
+        "ai_trajectory": ai_trajectory,
+        "three_year_forecast": {
+            "growth_rate_used_pct": round(forecast_rev_g, 2),
+            "projections": projections
+        }
     }
+

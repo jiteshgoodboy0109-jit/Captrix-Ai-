@@ -6,114 +6,147 @@ def generate_excel_report(company_name: str, statements: Dict[str, Any], ratios:
     output = io.BytesIO()
     
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        # Sheet 1: Executive Summary
+        # 1. Executive Summary & Health
         summary_rows = [
             {"Metric": "Company Name", "Value": company_name},
-            {"Metric": "Financial Health Score", "Value": ai_reports.get("health_score", 80)},
-            {"Metric": "Total Revenue", "Value": statements.get("income_statement", {}).get("total_revenue", 0)},
-            {"Metric": "Net Profit", "Value": statements.get("income_statement", {}).get("net_income", 0)},
-            {"Metric": "Current Ratio", "Value": ratios.get("liquidity", {}).get("current_ratio", {}).get("value", 0)},
-            {"Metric": "Debt-to-Equity", "Value": ratios.get("solvency", {}).get("debt_to_equity", {}).get("value", 0)},
-            {"Metric": "WACC (%)", "Value": corp_fin.get("capital_structure", {}).get("wacc", 0)}
+            {"Metric": "Financial Health Score", "Value": ai_reports.get("health_score", 85)},
+            {"Metric": "Latest Period", "Value": statements.get("ledger_summary", {}).get("target_year", "Current")},
+            {"Metric": "Revenue from Operations (Latest)", "Value": statements.get("income_statement", {}).get("revenue_from_operations", 0)},
+            {"Metric": "Total Revenue (Latest)", "Value": statements.get("income_statement", {}).get("total_revenue", 0)},
+            {"Metric": "Net Profit (Latest)", "Value": statements.get("income_statement", {}).get("net_income", 0)},
+            {"Metric": "Current Ratio (Latest)", "Value": ratios.get("liquidity", {}).get("current_ratio", {}).get("value", 0)},
+            {"Metric": "Debt-to-Equity (Latest)", "Value": ratios.get("solvency", {}).get("debt_to_equity", {}).get("value", 0)},
+            {"Metric": "WACC (%)", "Value": corp_fin.get("capital_structure", {}).get("wacc", 0)},
+            {"Metric": "Executive Summary", "Value": ai_reports.get("executive_summary", "")}
         ]
-        pd.DataFrame(summary_rows).to_excel(writer, sheet_name="Executive Summary", index=False)
+        pd.DataFrame(summary_rows).to_excel(writer, sheet_name="Executive Summary & Health", index=False)
 
-        # Sheet 2: Balance Sheet (2-Column Structured Accounting Layout)
-        bs = statements.get("balance_sheet", {})
-        ca = bs.get("current_assets", {})
-        ppe = bs.get("property_plant_equipment", {})
-        intangibles = bs.get("intangible_assets", {})
-        cl = bs.get("current_liabilities", {})
-        ltl = bs.get("long_term_liabilities", {})
-        eq = bs.get("equity", {})
-
-        assets_items = [
-            ("--- ASSETS ---", ""),
-            ("Current assets", ""),
-            ("Cash", ca.get("cash", 0)),
-            ("Petty cash", ca.get("petty_cash", 0)),
-            ("Temporary Investment", ca.get("temporary_investments", 0)),
-            ("Accounts receivable", ca.get("accounts_receivable", 0)),
-            ("Inventory", ca.get("inventory", 0)),
-            ("Supply", ca.get("supplies", 0)),
-            ("Prepaid Insurance", ca.get("prepaid_insurance", 0)),
-            ("Total current assets", ca.get("total_current_assets", 0)),
-            ("Investment", bs.get("investment", 0)),
-            ("Property plant and equipment", ""),
-            ("Land", ppe.get("land", 0)),
-            ("Land improvements", ppe.get("land_improvements", 0)),
-            ("Buildings", ppe.get("buildings", 0)),
-            ("Equipment", ppe.get("equipment", 0)),
-            ("Accumulated depreciation", ppe.get("accumulated_depreciation", 0)),
-            ("Prop, plant and equip-net", ppe.get("net_property_plant_equipment", 0)),
-            ("Intangible assets", ""),
-            ("Goodwill", intangibles.get("goodwill", 0)),
-            ("Trade names", intangibles.get("trade_names", 0)),
-            ("Total intangible assets", intangibles.get("total_intangible_assets", 0)),
-            ("Other assets", bs.get("other_assets", 0)),
-            ("TOTAL ASSETS", bs.get("total_assets", 0))
-        ]
-
-        liabilities_items = [
-            ("--- LIABILITIES & EQUITY ---", ""),
-            ("Current liabilities", ""),
-            ("Notes payable", cl.get("notes_payable", 0)),
-            ("Accounts payable", cl.get("accounts_payable", 0)),
-            ("Wages payable", cl.get("wages_payable", 0)),
-            ("Interest payable", cl.get("interest_payable", 0)),
-            ("Tax payable", cl.get("tax_payable", 0)),
-            ("Unearned revenue", cl.get("unearned_revenue", 0)),
-            ("Total current liabilities", cl.get("total_current_liabilities", 0)),
-            ("Long-term liabilities", ""),
-            ("Notes payable", ltl.get("notes_payable_lt", 0)),
-            ("Bonds payable", ltl.get("bonds_payable", 0)),
-            ("Total long term liabilities", ltl.get("total_long_term_liabilities", 0)),
-            ("Total liabilities", bs.get("total_liabilities", 0)),
-            ("--- OWNER'S EQUITY ---", ""),
-            ("Common stock", eq.get("common_stock", 0)),
-            ("Retained earnings", eq.get("retained_earnings", 0)),
-            ("Less: Treasury stock", eq.get("treasury_stock", 0)),
-            ("Total owner's equity", eq.get("total_equity", 0)),
-            ("", ""),
-            ("", ""),
-            ("", ""),
-            ("", ""),
-            ("TOTAL LIABILITIES & EQUITY", bs.get("total_liabilities_and_equity", 0))
-        ]
-
-        max_len = max(len(assets_items), len(liabilities_items))
-        bs_2col_rows = []
-
-        for i in range(max_len):
-            a_name, a_val = assets_items[i] if i < len(assets_items) else ("", "")
-            l_name, l_val = liabilities_items[i] if i < len(liabilities_items) else ("", "")
-            bs_2col_rows.append({
-                "Assets Line Item": a_name,
-                "Assets Amount (USD)": a_val,
-                " ": "",
-                "Liabilities & Equity Line Item": l_name,
-                "Liabilities & Equity Amount (USD)": l_val
+        # 2. Source Data Summary
+        norm_items = statements.get("normalized_items", [])
+        src_rows = []
+        for i in norm_items:
+            src_rows.append({
+                "Account Code": i.get("account_code", ""),
+                "Account Name": i.get("account_name", ""),
+                "Account Type": i.get("account_type", ""),
+                "Debit": i.get("debit", 0.0),
+                "Credit": i.get("credit", 0.0),
+                "Net Amount": i.get("net_amount", 0.0),
+                "Sheet": i.get("sheet", ""),
+                "Row": i.get("row", ""),
+                "Column": i.get("column", ""),
+                "Year": i.get("year", ""),
+                "Unit": i.get("unit", ""),
+                "Currency": i.get("currency", "")
             })
+        if not src_rows:
+            src_rows.append({"Status": "No raw line items extracted"})
+        pd.DataFrame(src_rows).to_excel(writer, sheet_name="Source Data Summary", index=False)
 
-        pd.DataFrame(bs_2col_rows).to_excel(writer, sheet_name="Balance Sheet & Trial Balance", index=False)
+        # 3. Financial Statements (Multi-Year)
+        by_year = statements.get("by_year", {})
+        years_sorted = sorted([y for y in by_year.keys() if y != "Current"])
+        if not by_year or not years_sorted:
+            by_year = {"Current": statements}
+            years_sorted = ["Current"]
 
-        # Sheet 3: Income Statement
-        inc = statements.get("income_statement", {})
-        inc_rows = [
-            {"Line Item": "Total Revenue", "Amount": inc.get("total_revenue", 0)},
-            {"Line Item": "Cost of Goods Sold (COGS)", "Amount": inc.get("cost_of_goods_sold", 0)},
-            {"Line Item": "Gross Profit", "Amount": inc.get("gross_profit", 0)},
-            {"Line Item": "Operating Expenses (OPEX)", "Amount": inc.get("operating_expenses", 0)},
-            {"Line Item": "EBITDA", "Amount": inc.get("ebitda", 0)},
-            {"Line Item": "Depreciation & Amortization", "Amount": inc.get("depreciation_amortization", 0)},
-            {"Line Item": "EBIT (Operating Income)", "Amount": inc.get("ebit", 0)},
-            {"Line Item": "Interest Expense", "Amount": inc.get("interest_expense", 0)},
-            {"Line Item": "Tax Expense", "Amount": inc.get("tax_expense", 0)},
-            {"Line Item": "NET INCOME", "Amount": inc.get("net_income", 0)}
+        fs_rows = []
+        # Add Income Statement Header
+        fs_rows.append({"Line Item": "--- INCOME STATEMENT ---", **{str(y): "" for y in years_sorted}})
+        
+        inc_keys = [
+            ("Revenue from Operations", "revenue_from_operations"),
+            ("Total / Gross Revenue", "total_revenue"),
+            ("Cost of Goods Sold (COGS)", "cost_of_goods_sold"),
+            ("Gross Profit", "gross_profit"),
+            ("Operating Expenses (OPEX)", "operating_expenses"),
+            ("EBITDA", "ebitda"),
+            ("Depreciation & Amortization", "depreciation_amortization"),
+            ("EBIT (Operating Income)", "ebit"),
+            ("Interest Expense", "interest_expense"),
+            ("Tax Expense", "tax_expense"),
+            ("NET INCOME", "net_income")
         ]
-        pd.DataFrame(inc_rows).to_excel(writer, sheet_name="Income Statement", index=False)
+        
+        for label, key in inc_keys:
+            row_dict = {"Line Item": label}
+            for y in years_sorted:
+                val = by_year.get(y, {}).get("income_statement", {}).get(key, 0.0)
+                row_dict[str(y)] = val
+            fs_rows.append(row_dict)
 
-        # Sheet 4: Ratios
+        fs_rows.append({"Line Item": "", **{str(y): "" for y in years_sorted}})
+        fs_rows.append({"Line Item": "--- BALANCE SHEET ---", **{str(y): "" for y in years_sorted}})
+
+        # Helper to retrieve nested bs values
+        def get_bs_val(bs_dict, path):
+            curr = bs_dict
+            for p in path:
+                if isinstance(curr, dict):
+                    curr = curr.get(p, 0.0)
+                else:
+                    return 0.0
+            return curr
+
+        bs_keys = [
+            ("Cash & Equivalents", ["current_assets", "cash"]),
+            ("Petty Cash", ["current_assets", "petty_cash"]),
+            ("Temporary Investment", ["current_assets", "temporary_investments"]),
+            ("Accounts Receivable", ["current_assets", "accounts_receivable"]),
+            ("Inventory", ["current_assets", "inventory"]),
+            ("Supplies", ["current_assets", "supplies"]),
+            ("Prepaid Insurance", ["current_assets", "prepaid_insurance"]),
+            ("Total Current Assets", ["current_assets", "total_current_assets"]),
+            ("Investment", ["investment"]),
+            ("Property, Plant & Equipment (Net)", ["property_plant_equipment", "net_property_plant_equipment"]),
+            ("Total Intangible Assets", ["intangible_assets", "total_intangible_assets"]),
+            ("Other Assets", ["other_assets"]),
+            ("Total Non-Current Assets", ["non_current_assets", "total_non_current_assets"]),
+            ("TOTAL ASSETS", ["total_assets"]),
+            ("Notes Payable (Short-Term)", ["current_liabilities", "notes_payable"]),
+            ("Accounts Payable", ["current_liabilities", "accounts_payable"]),
+            ("Wages Payable", ["current_liabilities", "wages_payable"]),
+            ("Interest Payable", ["current_liabilities", "interest_payable"]),
+            ("Tax Payable", ["current_liabilities", "tax_payable"]),
+            ("Unearned Revenue", ["current_liabilities", "unearned_revenue"]),
+            ("Short-Term Debt", ["current_liabilities", "short_term_debt"]),
+            ("Total Current Liabilities", ["current_liabilities", "total_current_liabilities"]),
+            ("Long-Term Liabilities", ["long_term_liabilities", "total_long_term_liabilities"]),
+            ("Total Liabilities", ["total_liabilities"]),
+            ("Common Stock", ["equity", "common_stock"]),
+            ("Retained Earnings", ["equity", "retained_earnings"]),
+            ("Less: Treasury Stock", ["equity", "treasury_stock"]),
+            ("Total Owner's Equity", ["equity", "total_equity"]),
+            ("TOTAL LIABILITIES & EQUITY", ["total_liabilities_and_equity"])
+        ]
+
+        for label, path in bs_keys:
+            row_dict = {"Line Item": label}
+            for y in years_sorted:
+                val = get_bs_val(by_year.get(y, {}).get("balance_sheet", {}), path)
+                row_dict[str(y)] = val
+            fs_rows.append(row_dict)
+
+        fs_rows.append({"Line Item": "", **{str(y): "" for y in years_sorted}})
+        fs_rows.append({"Line Item": "--- CASH FLOW ---", **{str(y): "" for y in years_sorted}})
+
+        cf_keys = [
+            ("Cash Flow from Operating Activities", "operating_activities"),
+            ("Cash Flow from Investing Activities", "investing_activities"),
+            ("Cash Flow from Financing Activities", "financing_activities"),
+            ("Net Increase/Decrease in Cash", "net_change_in_cash")
+        ]
+
+        for label, key in cf_keys:
+            row_dict = {"Line Item": label}
+            for y in years_sorted:
+                val = by_year.get(y, {}).get("cash_flow", {}).get(key, 0.0)
+                row_dict[str(y)] = val
+            fs_rows.append(row_dict)
+
+        pd.DataFrame(fs_rows).to_excel(writer, sheet_name="Statements (Multi-Year)", index=False)
+
+        # 4. Ratio Analytics
         r_rows = []
         for cat, items in ratios.items():
             if isinstance(items, dict):
@@ -125,10 +158,42 @@ def generate_excel_report(company_name: str, statements: Dict[str, Any], ratios:
                             "Formula": r.get("formula", "-"),
                             "Value": r.get("value", 0),
                             "Benchmark": r.get("benchmark", "-"),
-                            "Status": r.get("status", "INFO")
+                            "Status": r.get("status", "INFO"),
+                            "Interpretation": r.get("interpretation", "-")
                         })
-        if r_rows:
-            pd.DataFrame(r_rows).to_excel(writer, sheet_name="Ratio Analysis", index=False)
+        if not r_rows:
+            r_rows.append({"Status": "No ratio metrics calculable"})
+        pd.DataFrame(r_rows).to_excel(writer, sheet_name="Ratio Analytics", index=False)
+
+        # 5. Validation & Audit Report
+        val_rows = []
+        for y in years_sorted:
+            v_rep = by_year.get(y, {}).get("validation_report", {})
+            tb_rep = by_year.get(y, {}).get("trial_balance", {})
+            val_rows.append({
+                "Year": y,
+                "Balance Sheet Audit Check": v_rep.get("balance_sheet_check", "FAIL"),
+                "Total Assets": v_rep.get("total_assets", 0.0),
+                "Total Liabilities + Equity": v_rep.get("total_liabilities_plus_equity", 0.0),
+                "BS Imbalance Difference": v_rep.get("difference", 0.0),
+                "BS Audit Explanation": v_rep.get("explanation", ""),
+                "Trial Balance Balanced Check": "PASS" if tb_rep.get("is_balanced", True) else "FAIL",
+                "TB Difference": tb_rep.get("difference", 0.0)
+            })
+        if not val_rows:
+            val_rows.append({"Status": "No validation data"})
+        pd.DataFrame(val_rows).to_excel(writer, sheet_name="Validation & Audit Report", index=False)
+
+        # 6. AI Insights & Recommendations
+        insights_rows = []
+        for idx, rec in enumerate(ai_reports.get("recommendations", [])):
+            insights_rows.append({
+                "Recommendation No": idx + 1,
+                "Actionable Recommendations & CFO Insights": rec
+            })
+        if not insights_rows:
+            insights_rows.append({"Actionable Recommendations & CFO Insights": "No recommendations generated"})
+        pd.DataFrame(insights_rows).to_excel(writer, sheet_name="AI Insights & Recommendations", index=False)
 
     output.seek(0)
     return output.getvalue()

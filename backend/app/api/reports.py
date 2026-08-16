@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.db.database import get_db
-from app.db.models import Upload, Statement, Ratio, CorporateFinance, AIReport, Company, User
+from app.db.models import Upload, Statement, Ratio, CorporateFinance, AIReport, Company, User, FinancialData
 from app.auth.jwt import get_current_user
+from app.engine.statement_generator import generate_financial_statements
 from app.reports.pdf_generator import generate_pdf_report
 from app.reports.excel_generator import generate_excel_report
 
@@ -17,18 +18,33 @@ def fetch_upload_payload(upload_id: int, db: Session, current_user: User):
     company = db.query(Company).filter(Company.id == upload.company_id).first()
     company_name = company.name if company else "Enterprise Target"
 
-    stmt = db.query(Statement).filter(Statement.upload_id == upload_id).first()
     ratio = db.query(Ratio).filter(Ratio.upload_id == upload_id).first()
     corp = db.query(CorporateFinance).filter(CorporateFinance.upload_id == upload_id).first()
     ai_rep = db.query(AIReport).filter(AIReport.upload_id == upload_id).first()
 
-    statements_dict = {
-        "income_statement": stmt.income_statement if stmt else {},
-        "balance_sheet": stmt.balance_sheet if stmt else {},
-        "cash_flow": stmt.cash_flow if stmt else {},
-        "trial_balance": stmt.trial_balance if stmt else {},
-        "ledger_summary": stmt.ledger_summary if stmt else {}
-    }
+    # Reconstruct statements_dict dynamically from database line items
+    fd_items = db.query(FinancialData).filter(FinancialData.upload_id == upload_id).all()
+    items = []
+    for f in fd_items:
+        meta = f.metadata_json or {}
+        items.append({
+            "account_code": f.account_code,
+            "account_name": f.account_name,
+            "account_type": f.account_type,
+            "debit": f.debit,
+            "credit": f.credit,
+            "net_amount": f.net_amount,
+            "sheet": meta.get("sheet", "Sheet1"),
+            "row": meta.get("row", 1),
+            "column": meta.get("column", "A"),
+            "year": meta.get("year", "Current"),
+            "unit": meta.get("unit", "Units"),
+            "currency": meta.get("currency", "USD"),
+            "source_label": meta.get("source_label", f.account_name),
+            "source_value": meta.get("source_value", f.net_amount),
+            "is_summary": meta.get("is_summary", False)
+        })
+    statements_dict = generate_financial_statements(items)
     ratios_dict = {
         "profitability": ratio.profitability if ratio else {},
         "liquidity": ratio.liquidity if ratio else {},

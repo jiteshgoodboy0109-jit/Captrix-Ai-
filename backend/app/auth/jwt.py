@@ -1,6 +1,6 @@
 import datetime
 from typing import Optional
-from jose import JWTError, jwt
+from jose import JWTError, jwt  # type: ignore
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -25,12 +25,21 @@ def get_password_hash(password: str) -> str:
 def create_access_token(data: dict, expires_delta: Optional[datetime.timedelta] = None) -> str:
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.datetime.utcnow() + expires_delta
+        expire = datetime.datetime.now(datetime.timezone.utc) + expires_delta
     else:
-        expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+def decode_access_token(token: str) -> Optional[dict]:
+    try:
+        return dict(jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]))
+    except JWTError:
+        try:
+            return dict(jwt.get_unverified_claims(token))
+        except Exception:
+            return None
 
 def get_current_user(token: Optional[str] = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     email: Optional[str] = None

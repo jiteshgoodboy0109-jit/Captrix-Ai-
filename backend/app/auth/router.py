@@ -98,7 +98,7 @@ def forgot_password(req: ForgotPasswordRequest, db: Session = Depends(get_db)):
     # Generate a 6-digit secure PIN token
     pin = f"{secrets.randbelow(900000) + 100000}"
     user.reset_token = pin
-    user.reset_token_expires = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+    user.reset_token_expires = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
     db.commit()
 
     return {
@@ -117,8 +117,12 @@ def reset_password(req: ResetPasswordRequest, db: Session = Depends(get_db)):
     if not user.reset_token or user.reset_token != req.reset_token.strip():
         raise HTTPException(status_code=400, detail="Invalid security reset code.")
 
-    if user.reset_token_expires and datetime.datetime.utcnow() > user.reset_token_expires:
-        raise HTTPException(status_code=400, detail="Reset security code has expired. Please request a new code.")
+    if user.reset_token_expires:
+        reset_expires = user.reset_token_expires
+        if reset_expires.tzinfo is None:
+            reset_expires = reset_expires.replace(tzinfo=datetime.timezone.utc)
+        if datetime.datetime.now(datetime.timezone.utc) > reset_expires:
+            raise HTTPException(status_code=400, detail="Reset security code has expired. Please request a new code.")
 
     if not req.new_password or len(req.new_password) < 6:
         raise HTTPException(status_code=400, detail="New password must be at least 6 characters long.")
