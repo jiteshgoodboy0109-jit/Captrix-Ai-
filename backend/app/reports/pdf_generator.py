@@ -82,7 +82,9 @@ def generate_pdf_report(company_name: str, statements: Dict[str, Any], ratios: D
     story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor("#0284C7"), spaceAfter=12))
 
     # Health Score Box
-    score = ai_reports["health_score"]
+    from app.engine.quality_engine import calculate_financial_health_score
+    health_obj = calculate_financial_health_score(statements, ratios, ai_reports.get("canonical_dataset"), ai_reports.get("quality_report"))
+    score = health_obj["score"]
     score_color = "#16A34A" if score >= 75 else ("#D97706" if score >= 55 else "#DC2626")
     story.append(Paragraph(f"Overall Financial Health Score: <b><font color='{score_color}'>{score} / 100</font></b>", h2_style))
     story.append(Paragraph(ai_reports["executive_summary"], body_style))

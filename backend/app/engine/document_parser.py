@@ -86,14 +86,22 @@ def classify_account(name: str, sheet_context: str = "") -> str:
     name_lower = name.lower()
     ctx_lower = sheet_context.lower()
     
-    # Specific account mapping overrides for Non-Financial / Metrics
+    # Specific account mapping overrides for Non-Financial / Metrics & Cash Flow
+    if any(kw in name_lower for kw in ["cash from", "operating activity", "investing activity", "financing activity", "net cash flow"]):
+        return "CASH_FLOW"
+    if any(kw in name_lower for kw in ["asset", "assets", "block", "ppe", "property, plant", "property plant"]):
+        if "deferred tax asset" not in name_lower and "tax asset" not in name_lower:
+            return "ASSET"
+    if "liability" in name_lower or "liabilities" in name_lower:
+        return "PAYABLE_LIABILITY" if "payable" in name_lower else "LIABILITY"
     metric_keywords = [
         "no. of equity shares", "equity shares in cr", "number of shares", "share count",
         "shares outstanding", "face value", "eps", "earnings per share", "diluted eps",
         "basic eps", "book value per share", "dividend per share", "number of employees",
-        "pe ratio", "p/e", "margin %", "growth %", "yield", "price to earnings"
+        "pe ratio", "p/e", "margin %", "growth %", "yield", "price to earnings",
+        "bonus shares", "new bonus shares", "bonus share", "bonus share count"
     ]
-    if any(kw in name_lower for kw in metric_keywords):
+    if any(kw in name_lower for kw in metric_keywords) or ("shares" in name_lower and "capital" not in name_lower and "equity" not in name_lower):
         return "METRIC"
     if "capital work" in name_lower or "work in progress" in name_lower or "cwip" in name_lower:
         return "ASSET"
@@ -101,6 +109,8 @@ def classify_account(name: str, sheet_context: str = "") -> str:
         return "CASH_ASSET"
     if "receivable" in name_lower or "debtor" in name_lower:
         return "RECEIVABLE_ASSET"
+    if "change in inventory" in name_lower or "changes in inventory" in name_lower or "inventory change" in name_lower:
+        return "COGS"
     if "inventory" in name_lower or "stock" in name_lower:
         return "INVENTORY_ASSET"
     if "payable" in name_lower or "creditor" in name_lower:
@@ -115,6 +125,18 @@ def classify_account(name: str, sheet_context: str = "") -> str:
         if "payable" not in name_lower and "asset" not in name_lower and "deferred tax asset" not in name_lower and "deferred tax liability" not in name_lower:
             return "TAX_EXPENSE"
 
+    if any(kw in name_lower for kw in ["dividend", "price:", "price", "report date"]):
+        return "METRIC"
+    if "net profit" in name_lower or "net income" in name_lower or "profit after tax" in name_lower:
+        return "NET_INCOME"
+    if "operating profit" in name_lower or "pbt" in name_lower or "profit before tax" in name_lower:
+        return "OPERATING_INCOME"
+    if any(kw in name_lower for kw in ["asset", "assets"]):
+        if "deferred tax asset" not in name_lower and "tax asset" not in name_lower:
+            return "ASSET"
+    if any(kw in name_lower for kw in ["exp", "expense", "selling", "admin", "mfr", "overhead", "cost"]):
+        return "EXPENSE"
+
     for acct_type, patterns in ACCOUNT_TYPE_RULES.items():
         for p in patterns:
             if re.search(p, name_lower):
@@ -122,11 +144,17 @@ def classify_account(name: str, sheet_context: str = "") -> str:
 
     # Fallback to sheet context
     if "income" in ctx_lower or "sales" in ctx_lower or "profit" in ctx_lower:
-        return "REVENUE" if ("cost" not in name_lower and "expense" not in name_lower) else "EXPENSE"
+        return "REVENUE" if ("cost" not in name_lower and "expense" not in name_lower and "exp" not in name_lower) else "EXPENSE"
     if "balance" in ctx_lower:
-        return "ASSET"
+        asset_keywords = ["asset", "block", "cwip", "investment", "building", "property", "equipment", "machinery", "goodwill", "receivable", "cash", "bank", "inventory"]
+        if any(ak in name_lower for ak in asset_keywords):
+            return "ASSET"
+        if any(lk in name_lower for lk in ["payable", "liability", "liabilities", "debt", "borrowing", "provision"]):
+            return "LIABILITY"
+        if any(ek in name_lower for ek in ["equity", "share", "capital", "reserve", "surplus"]):
+            return "EQUITY"
 
-    return "EXPENSE" if ("cost" in name_lower or "fee" in name_lower) else "ASSET"
+    return "EXPENSE" if ("cost" in name_lower or "fee" in name_lower or "exp" in name_lower) else "EXPENSE"
 
 def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: str) -> Dict[str, Any]:
     """Inspect top 15 rows and columns of all sheets to detect exact Company Name, Currency, and Unit Scale."""
@@ -521,6 +549,9 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         print(f"Excel read error for {filename}: {e}")
 
     SKIP_SHEETS = ["customization", "parameters", "template", "setup", "config", "instruction", "instructions", "notes", "readme"]
+    has_master_data_sheet = any("data sheet" in str(s).lower() for s in sheet_data.keys())
+    if has_master_data_sheet:
+        SKIP_SHEETS.extend(["profit & loss", "quarters", "balance sheet", "cash flow"])
 
     if sheet_data:
         meta_info = detect_company_and_currency(sheet_data, filename)
@@ -610,14 +641,47 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                             val = clean_value(val_raw)
                             col_letter = chr(65 + col_idx) if col_idx < 26 else f"Col{col_idx}"
                             
+                            try:
+                                yr_val = int(year)
+                            except ValueError:
+                                yr_val = 2026
+
+                            if is_quarterly_item:
+                                cal_yr = yr_val
+                                f_yr = "FY2027" if str(year) == "2026" else f"FY{yr_val + 1}"
+                                p_id = "Q1_FY2027" if str(year) == "2026" else f"Q1_FY{yr_val + 1}"
+                                p_start = f"{yr_val}-04-01"
+                                p_end = f"{yr_val}-06-30"
+                            else:
+                                cal_yr = yr_val
+                                f_yr = f"FY{yr_val}"
+                                p_id = f"FY{yr_val}"
+                                p_start = f"{yr_val - 1}-04-01"
+                                p_end = f"{yr_val}-03-31"
+
+                            if current_section == "BALANCE SHEET" or acct_type in ["ASSET", "LIABILITY", "EQUITY"] or "ASSET" in acct_type or "LIABILITY" in acct_type or "EQUITY" in acct_type:
+                                stmt_type = "BALANCE_SHEET"
+                            elif current_section == "CASH FLOW" or acct_type == "CASH_FLOW":
+                                stmt_type = "CASH_FLOW"
+                            else:
+                                stmt_type = "INCOME_STATEMENT"
+
                             normalized_items.append({
                                 "account_code": f"{sheet_name}-{idx}-{year}",
                                 "account_name": acct_name,
                                 "account_type": acct_type,
                                 "is_summary": is_summary_or_total_row(acct_name),
                                 "is_quarterly": is_quarterly_item,
-                                "debit": val if val > 0 and acct_type in ["ASSET", "EXPENSE"] else 0.0,
-                                "credit": abs(val) if val < 0 or acct_type in ["LIABILITY", "EQUITY", "REVENUE"] else 0.0,
+                                "calendar_year": cal_yr,
+                                "fiscal_year": f_yr,
+                                "period_type": "QUARTERLY" if is_quarterly_item else "ANNUAL",
+                                "period_id": p_id,
+                                "period_start": p_start,
+                                "period_end": p_end,
+                                "statement_type": stmt_type,
+                                "scope": "QUARTERLY" if is_quarterly_item else ("CONSOLIDATED" if "consolidated" in sheet_name.lower() or "consolidated" in acct_name.lower() else "STANDALONE"),
+                                "debit": abs(val) if (acct_type in ["ASSET", "CASH_ASSET", "RECEIVABLE_ASSET", "INVENTORY_ASSET", "EXPENSE", "COGS", "DEPRECIATION_EXPENSE", "INTEREST_EXPENSE", "TAX_EXPENSE"] or "ASSET" in acct_type or "EXPENSE" in acct_type) else 0.0,
+                                "credit": abs(val) if (acct_type in ["LIABILITY", "PAYABLE_LIABILITY", "DEBT_LIABILITY", "EQUITY", "REVENUE", "OPERATING_INCOME", "NET_INCOME", "SALES", "OTHER_INCOME"] or "LIABILITY" in acct_type or "REVENUE" in acct_type or "EQUITY" in acct_type) else 0.0,
                                 "net_amount": val,
                                 "sheet": sheet_name,
                                 "row": int(idx) + 1 if isinstance(idx, (int, float)) else 1,

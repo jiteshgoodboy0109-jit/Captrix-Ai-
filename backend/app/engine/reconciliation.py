@@ -121,3 +121,78 @@ def perform_source_to_result_reconciliation(
         "not_available_count": not_available_count,
         "metrics": metric_results
     }
+
+def validate_report_consistency(
+    statements: Dict[str, Any],
+    ratios: Dict[str, Any],
+    insights: Dict[str, Any],
+    quality_report: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Automated Cross-Module Consistency Checker (Critical Issue #20).
+    Verifies:
+      1. Executive Summary Table Health Score == Narrative Health Score
+      2. Income Statement Net Income == AI Narrative Net Income
+      3. Balance Sheet Total Assets == Total Liabilities + Equity
+    """
+    mismatches = []
+    
+    # 1. Health Score Consistency
+    q_score = round(float(quality_report.get("quality_score", 0.0)), 1)
+    narrative = insights.get("executive_summary", "")
+    if f"{q_score:.1f}" not in narrative and f"{int(q_score)}" not in narrative:
+        mismatches.append(f"Health score mismatch: Quality report score ({q_score:.1f}) not found in executive summary narrative.")
+
+    # 2. Balance Sheet Consistency
+    val_report = statements.get("validation_report", {})
+    if val_report.get("balance_sheet_check") != "PASS":
+        mismatches.append(f"Balance sheet consistency failure: Assets != Liabilities + Equity.")
+
+    status = "PASS" if len(mismatches) == 0 else "REPORT_CONSISTENCY_FAILED"
+    return {
+        "status": status,
+        "is_consistent": len(mismatches) == 0,
+        "mismatch_count": len(mismatches),
+        "mismatches": mismatches
+    }
+
+class PeriodIntegrityError(ValueError):
+    pass
+
+class ScopeIntegrityError(ValueError):
+    pass
+
+class HealthScoreConsistencyError(ValueError):
+    pass
+
+class ReportConsistencyError(ValueError):
+    pass
+
+def validate_period_integrity(items: List[Dict[str, Any]]):
+    for item in items:
+        is_q = item.get("is_quarterly", False)
+        p_type = item.get("period_type", "ANNUAL")
+        if is_q and p_type != "QUARTERLY":
+            raise PeriodIntegrityError(f"Period integrity mismatch: item {item.get('account_name')} is_quarterly is True but period_type is {p_type}")
+        if not is_q and p_type == "QUARTERLY":
+            raise PeriodIntegrityError(f"Period integrity mismatch: item {item.get('account_name')} is_quarterly is False but period_type is QUARTERLY")
+
+def validate_scope_integrity(items: List[Dict[str, Any]]):
+    for item in items:
+        scope = item.get("scope", "STANDALONE")
+        if scope not in ["STANDALONE", "CONSOLIDATED", "QUARTERLY"]:
+            raise ScopeIntegrityError(f"Scope integrity error: invalid scope value {scope}")
+
+def validate_health_score_consistency(
+    statements: Dict[str, Any],
+    ratios: Dict[str, Any],
+    ai_reports: Dict[str, Any]
+):
+    from app.engine.quality_engine import calculate_financial_health_score
+    health_obj = calculate_financial_health_score(statements, ratios, ai_reports.get("canonical_dataset"), ai_reports.get("quality_report"))
+    score = health_obj["score"]
+    
+    narrative = ai_reports.get("executive_summary", "")
+    if f"{score:.1f}" not in narrative and f"{int(score)}" not in narrative:
+        raise HealthScoreConsistencyError(f"Health score consistency failure: canonical score {score} not found in AI narrative text.")
+

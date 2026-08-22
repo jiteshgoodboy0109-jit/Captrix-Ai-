@@ -1,9 +1,17 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const getApiBaseUrl = (): string => {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+    return `http://${window.location.hostname}:8000`;
+  }
+  return 'http://localhost:8000';
+};
 
 export const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: getApiBaseUrl(),
 });
 
 api.interceptors.request.use((config) => {
@@ -11,6 +19,10 @@ api.interceptors.request.use((config) => {
     const token = localStorage.getItem('token');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    // Update baseURL dynamically per request if needed
+    if (!process.env.NEXT_PUBLIC_API_URL && window.location && window.location.hostname) {
+      config.baseURL = `http://${window.location.hostname}:8000`;
     }
   }
   return config;
@@ -42,7 +54,9 @@ export const downloadReportFile = async (url: string, filename: string) => {
     window.URL.revokeObjectURL(blobUrl);
   } catch (err) {
     console.error('Report download error:', err);
-    const baseUrl = api.defaults.baseURL || 'http://localhost:8000';
+    const baseUrl = (typeof window !== 'undefined' && window.location && window.location.hostname)
+      ? `http://${window.location.hostname}:8000`
+      : (api.defaults.baseURL || 'http://localhost:8000');
     window.open(`${baseUrl}${url}`, '_blank');
   }
 };

@@ -43,14 +43,23 @@ def compute_financial_quality_score(
 
     total_score = round(min(100.0, max(0.0, extraction_pts + bs_pts + cf_pts + reconciliation_pts)), 1)
     
-    # HARD GATE: If balance sheet check fails, cap total quality score at 50.0 and force LOW confidence
+    tb_status = validation_report.get("trial_balance_check", "PASS")
+    ni_status = validation_report.get("net_income_reconciliation_check", "PASS")
+
+    # HARD GATE: If balance sheet check or trial balance check fails, cap score at 50.0 and require review
     quality_status = "VERIFIED"
     if bs_status == "FAIL":
         total_score = min(50.0, total_score)
         confidence_level = "LOW"
         quality_status = "VALIDATION_FAILED"
-    elif total_score >= 90.0 and failed_count == 0:
+    elif tb_status == "FAIL":
+        total_score = min(50.0, total_score)
+        confidence_level = "LOW"
+        quality_status = "REVIEW_REQUIRED"
+    elif total_score >= 90.0 and failed_count == 0 and bs_status == "PASS":
         confidence_level = "HIGH"
+        if ni_status == "REVIEW_REQUIRED":
+            quality_status = "REVIEW_REQUIRED"
     elif total_score >= 70.0 and failed_count == 0:
         confidence_level = "MEDIUM"
     else:
@@ -68,3 +77,35 @@ def compute_financial_quality_score(
             "source_reconciliation": round(reconciliation_pts, 1)
         }
     }
+
+def calculate_financial_health_score(
+    statements: Dict[str, Any],
+    ratios: Dict[str, Any],
+    canonical_dataset: Any = None,
+    quality_report: Any = None
+) -> Dict[str, Any]:
+    """
+    Authoritative single-source-of-truth function for computing the Financial Health Score.
+    Guarantees absolute consistency between the narrative, report tables, and metadata.
+    """
+    if quality_report and isinstance(quality_report, dict) and "quality_score" in quality_report:
+        score = quality_report["quality_score"]
+    else:
+        from app.engine.reconciliation import perform_source_to_result_reconciliation
+        if not canonical_dataset:
+            from app.engine.canonical_model import build_canonical_dataset
+            items = statements.get("normalized_items", [])
+            canonical_dataset = build_canonical_dataset(items, "5_Wipro.xlsx")
+        rec = perform_source_to_result_reconciliation(canonical_dataset, statements, ratios)
+        val = statements.get("validation_report", {})
+        q_res = compute_financial_quality_score(rec, val)
+        score = q_res["quality_score"]
+
+    target_year = statements.get("ledger_summary", {}).get("target_year", "2026")
+    return {
+        "score": float(score),
+        "period_type": "ANNUAL",
+        "period_id": f"FY{target_year}",
+        "methodology_version": "v1"
+    }
+

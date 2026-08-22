@@ -7,10 +7,17 @@ def generate_excel_report(company_name: str, statements: Dict[str, Any], ratios:
     
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         # 1. Executive Summary & Health
+        target_year = statements.get("ledger_summary", {}).get("target_year", "2026")
+        latest_period_str = f"FY{target_year} Annual" if str(target_year).isdigit() else target_year
+
+        from app.engine.quality_engine import calculate_financial_health_score
+        health_obj = calculate_financial_health_score(statements, ratios, ai_reports.get("canonical_dataset"), ai_reports.get("quality_report"))
+        health_score = health_obj["score"]
+
         summary_rows = [
             {"Metric": "Company Name", "Value": company_name},
-            {"Metric": "Financial Health Score", "Value": ai_reports.get("health_score", 85)},
-            {"Metric": "Latest Period", "Value": statements.get("ledger_summary", {}).get("target_year", "Current")},
+            {"Metric": "Financial Health Score", "Value": health_score},
+            {"Metric": "Latest Period", "Value": latest_period_str},
             {"Metric": "Revenue from Operations (Latest)", "Value": statements.get("income_statement", {}).get("revenue_from_operations", 0)},
             {"Metric": "Total Revenue (Latest)", "Value": statements.get("income_statement", {}).get("total_revenue", 0)},
             {"Metric": "Net Profit (Latest)", "Value": statements.get("income_statement", {}).get("net_income", 0)},

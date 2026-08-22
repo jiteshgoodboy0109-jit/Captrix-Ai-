@@ -42,7 +42,12 @@ def fetch_upload_payload(upload_id: int, db: Session, current_user: User):
             "currency": meta.get("currency", "USD"),
             "source_label": meta.get("source_label", f.account_name),
             "source_value": meta.get("source_value", f.net_amount),
-            "is_summary": meta.get("is_summary", False)
+            "is_summary": meta.get("is_summary", False),
+            "is_quarterly": meta.get("is_quarterly", False),
+            "period_type": meta.get("period_type", "ANNUAL"),
+            "fiscal_year": meta.get("fiscal_year", ""),
+            "period_id": meta.get("period_id", ""),
+            "scope": meta.get("scope", "STANDALONE")
         })
     statements_dict = generate_financial_statements(items)
     ratios_dict = {

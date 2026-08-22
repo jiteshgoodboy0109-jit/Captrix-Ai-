@@ -38,7 +38,11 @@ export default function RegisterPage() {
       await registerUser(email, fullName, password, role);
       router.push('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Registration failed. Please check your information and try again.');
+      if (!err.response) {
+        setError('Network/Server Connection Error: Unable to reach the backend API server. Please verify network connectivity.');
+      } else {
+        setError(err.response.data?.detail || 'Registration failed. Please check your information and try again.');
+      }
     } finally {
       setLoading(false);
     }

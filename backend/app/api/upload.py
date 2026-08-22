@@ -104,7 +104,12 @@ async def upload_financial_file(
                     "currency": item.get("currency", "USD"),
                     "source_label": item.get("source_label", ""),
                     "source_value": item.get("source_value", 0.0),
-                    "is_summary": item.get("is_summary", False)
+                    "is_summary": item.get("is_summary", False),
+                    "is_quarterly": item.get("is_quarterly", False),
+                    "period_type": item.get("period_type", "ANNUAL"),
+                    "fiscal_year": item.get("fiscal_year", ""),
+                    "period_id": item.get("period_id", ""),
+                    "scope": item.get("scope", "STANDALONE")
                 }
             )
             db.add(fd)
@@ -147,10 +152,11 @@ async def upload_financial_file(
         quality_report = sanitize_json_data(compute_financial_quality_score(reconciliation_report, statements.get("validation_report", {})))
 
         # 8. AI Insights & Health Score Engine
-        ai_insights = sanitize_json_data(generate_ai_insights(statements, ratios, corp_fin, canonical_dataset))
+        ai_insights = sanitize_json_data(generate_ai_insights(statements, ratios, corp_fin, canonical_dataset, quality_report=quality_report))
+        health_score = ai_insights.get("canonical_health_score", {}).get("score", quality_report.get("quality_score", 85.0))
         ai_record = AIReport(
             upload_id=upload.id,
-            health_score=clean_value(quality_report.get("quality_score", ai_insights.get("health_score", 85.0))),
+            health_score=clean_value(health_score),
             executive_summary=ai_insights.get("executive_summary", ""),
             strengths=ai_insights.get("strengths", []),
             weaknesses=ai_insights.get("weaknesses", []),
@@ -163,7 +169,7 @@ async def upload_financial_file(
             user_id=current_user.id,
             upload_id=upload.id,
             company_name=final_company_name,
-            health_score=clean_value(quality_report.get("quality_score", 85.0)),
+            health_score=clean_value(health_score),
             status="COMPLETED",
             report_name=f"{final_company_name} - Financial Audit Report"
         )
@@ -176,7 +182,7 @@ async def upload_financial_file(
             "filename": file.filename,
             "company_name": final_company_name,
             "sheet_names": sheet_names,
-            "health_score": clean_value(quality_report.get("quality_score", 85.0)),
+            "health_score": clean_value(health_score),
             "quality_report": quality_report,
             "reconciliation": reconciliation_report,
             "message": "Workbook processed, reconciled, analyzed, and saved to Report History successfully."
@@ -251,7 +257,13 @@ async def load_sample_file(
                     "unit": item.get("unit", "Units"),
                     "currency": item.get("currency", "USD"),
                     "source_label": item.get("source_label", ""),
-                    "source_value": item.get("source_value", 0.0)
+                    "source_value": item.get("source_value", 0.0),
+                    "is_summary": item.get("is_summary", False),
+                    "is_quarterly": item.get("is_quarterly", False),
+                    "period_type": item.get("period_type", "ANNUAL"),
+                    "fiscal_year": item.get("fiscal_year", ""),
+                    "period_id": item.get("period_id", ""),
+                    "scope": item.get("scope", "STANDALONE")
                 }
             )
             db.add(fd)
@@ -286,10 +298,15 @@ async def load_sample_file(
         )
         db.add(corp_record)
 
-        ai_insights = sanitize_json_data(generate_ai_insights(statements, ratios, corp_fin))
+        canonical_dataset = sanitize_json_data(build_canonical_dataset(items, filename))
+        reconciliation_report = sanitize_json_data(perform_source_to_result_reconciliation(canonical_dataset, statements, ratios))
+        quality_report = sanitize_json_data(compute_financial_quality_score(reconciliation_report, statements.get("validation_report", {})))
+
+        ai_insights = sanitize_json_data(generate_ai_insights(statements, ratios, corp_fin, canonical_dataset, quality_report=quality_report))
+        health_score = ai_insights.get("canonical_health_score", {}).get("score", quality_report.get("quality_score", 85.0))
         ai_record = AIReport(
             upload_id=upload.id,
-            health_score=clean_value(ai_insights.get("health_score", 85.0)),
+            health_score=clean_value(health_score),
             executive_summary=ai_insights.get("executive_summary", ""),
             strengths=ai_insights.get("strengths", []),
             weaknesses=ai_insights.get("weaknesses", []),
@@ -301,7 +318,7 @@ async def load_sample_file(
             user_id=current_user.id,
             upload_id=upload.id,
             company_name=company_name,
-            health_score=clean_value(ai_insights.get("health_score", 85.0)),
+            health_score=clean_value(health_score),
             status="COMPLETED",
             report_name=f"{company_name} - Financial Audit Report"
         )
@@ -313,7 +330,7 @@ async def load_sample_file(
             "filename": filename,
             "company_name": company_name,
             "sheet_names": sheet_names,
-            "health_score": clean_value(ai_insights.get("health_score", 85.0)),
+            "health_score": clean_value(health_score),
             "message": "Sample workbook loaded and saved to history."
         }
     except Exception as err:

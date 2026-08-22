@@ -24,7 +24,11 @@ export default function LoginPage() {
       await login(email, password);
       router.push('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Invalid email or password. Please verify credentials.');
+      if (!err.response) {
+        setError('Network/Server Connection Error: Unable to reach the backend API server. Please verify network connectivity.');
+      } else {
+        setError(err.response.data?.detail || 'Invalid email or password. Please verify credentials.');
+      }
     } finally {
       setLoading(false);
     }

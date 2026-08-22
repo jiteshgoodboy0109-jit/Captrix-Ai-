@@ -8,6 +8,8 @@ const josefin = Josefin_Sans({
   subsets: ['latin'],
   display: 'swap',
   variable: '--font-josefin',
+  fallback: ['Josefin Sans', 'system-ui', 'sans-serif'],
+  adjustFontFallback: false,
 });
 
 export const metadata = {
