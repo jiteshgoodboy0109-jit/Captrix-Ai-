@@ -86,8 +86,24 @@ def calculate_financial_health_score(
 ) -> Dict[str, Any]:
     """
     Authoritative single-source-of-truth function for computing the Financial Health Score.
-    Guarantees absolute consistency between the narrative, report tables, and metadata.
+    Guarantees that if source data, P&L, or Balance Sheet validation fail, health_score is NOT_CALCULABLE.
     """
+    val = statements.get("validation_report", {})
+    bs_valid = val.get("balance_sheet_check") == "PASS"
+    has_items = bool(statements.get("normalized_items"))
+    pnl_valid = val.get("pnl_check") == "PASS" or (statements.get("income_statement", {}).get("total_revenue", 0) > 0)
+
+    target_year = statements.get("ledger_summary", {}).get("target_year", "2026")
+
+    if not bs_valid or not has_items or not pnl_valid:
+        return {
+            "score": "NOT_CALCULABLE",
+            "is_calculable": False,
+            "period_type": "ANNUAL",
+            "period_id": f"FY{target_year}",
+            "methodology_version": "v1"
+        }
+
     if quality_report and isinstance(quality_report, dict) and "quality_score" in quality_report:
         score = quality_report["quality_score"]
     else:
@@ -98,13 +114,12 @@ def calculate_financial_health_score(
             filename = statements.get("ledger_summary", {}).get("filename", "Financial_Workbook.xlsx")
             canonical_dataset = build_canonical_dataset(items, filename)
         rec = perform_source_to_result_reconciliation(canonical_dataset, statements, ratios)
-        val = statements.get("validation_report", {})
         q_res = compute_financial_quality_score(rec, val)
         score = q_res["quality_score"]
 
-    target_year = statements.get("ledger_summary", {}).get("target_year", "2026")
     return {
         "score": float(score),
+        "is_calculable": True,
         "period_type": "ANNUAL",
         "period_id": f"FY{target_year}",
         "methodology_version": "v1"

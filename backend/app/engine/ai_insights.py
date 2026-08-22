@@ -91,7 +91,7 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
     wacc = corp_fin.get("capital_structure", {}).get("wacc", 8.5)
 
     is_profitable = (net_inc or 0.0) > 0
-    is_healthy = health_score >= 65.0
+    is_healthy = (float(health_score) >= 65.0) if isinstance(health_score, (int, float)) else False
 
     cr_str = f"Current Ratio of {cr:.2f}" if cr is not None else "Current Ratio: Not Calculable (Inputs Missing)"
     np_str = f"{np_margin:.1f}% net margin" if np_margin is not None else "Net Margin: Not Calculable"
@@ -107,8 +107,9 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
     pbt_str = f"with Profit Before Tax of ${pbt_val:,.2f}, Tax Expense of ${tax_val:,.2f}, and " if pbt_val > 0 else ""
     wacc_str = f", with an estimated Cost of Capital (WACC) of {wacc:.1f}%" if (wacc is not None and isinstance(wacc, (int, float))) else ""
 
+    hs_formatted = f"{float(health_score):.1f}/100" if isinstance(health_score, (int, float)) else str(health_score)
     executive_summary = (
-        f"Automated AI Financial Intelligence evaluation assigns an overall Financial Health Score of {health_score:.1f}/100. "
+        f"Automated AI Financial Intelligence evaluation assigns an overall Financial Health Score of {hs_formatted}. "
         f"For the Annual period, Sales revenue reaches ${op_rev:,.2f} ({other_inc_str}Total Recognized Revenue: ${tot_rev:,.2f}) "
         f"{pbt_str}Net Profit of ${net_inc:,.2f} ({np_str}). "
         f"Liquidity assessment indicates {cr_str}. "
@@ -187,7 +188,8 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
         })
 
     # Dynamic Strategic Priority Recommendation
-    if health_score >= 80:
+    numeric_hs = float(health_score) if isinstance(health_score, (int, float)) else 0.0
+    if numeric_hs >= 80:
         roe_str = f"{roe:.1f}%" if roe is not None else "N/A"
         recommendations.append({
             "priority": "STRATEGIC (6-12 Months)",
@@ -257,11 +259,18 @@ def answer_financial_query(query: str, statements: Dict[str, Any], ratios: Dict[
     ccc = corp_fin.get("working_capital_cycle", {}).get("cash_conversion_cycle", 30.0)
 
     if "balance sheet" in q or "assets" in q or "liabilities" in q:
+        tot_assets_val = bs.get('total_assets') or 0.0
+        tot_liab_val = bs.get('total_liabilities') or 0.0
+        eq_val = (bs.get('equity', {}).get('total_equity') if isinstance(bs.get('equity'), dict) else bs.get('equity')) or 0.0
+        cur_assets_val = (bs.get('current_assets', {}).get('total_current_assets') if isinstance(bs.get('current_assets'), dict) else 0.0) or 0.0
+        non_cur_assets_val = (bs.get('non_current_assets', {}).get('total_non_current_assets') if isinstance(bs.get('non_current_assets'), dict) else 0.0) or 0.0
+        cur_liab_val = (bs.get('current_liabilities', {}).get('total_current_liabilities') if isinstance(bs.get('current_liabilities'), dict) else 0.0) or 0.0
+        non_cur_liab_val = (bs.get('non_current_liabilities', {}).get('total_non_current_liabilities') if isinstance(bs.get('non_current_liabilities'), dict) else 0.0) or 0.0
         return (
             f"**Balance Sheet Summary**:\n"
-            f"- **Total Assets**: ${bs.get('total_assets', 0.0):,.2f} (Current: ${bs.get('current_assets', {}).get('total_current_assets', 0.0):,.2f}, Non-Current: ${bs.get('non_current_assets', {}).get('total_non_current_assets', 0.0):,.2f})\n"
-            f"- **Total Liabilities**: ${bs.get('total_liabilities', 0.0):,.2f} (Current: ${bs.get('current_liabilities', {}).get('total_current_liabilities', 0.0):,.2f}, Non-Current: ${bs.get('non_current_liabilities', {}).get('total_non_current_liabilities', 0.0):,.2f})\n"
-            f"- **Stockholders' Equity**: ${bs.get('equity', {}).get('total_equity', 0.0):,.2f}\n"
+            f"- **Total Assets**: ${tot_assets_val:,.2f} (Current: ${cur_assets_val:,.2f}, Non-Current: ${non_cur_assets_val:,.2f})\n"
+            f"- **Total Liabilities**: ${tot_liab_val:,.2f} (Current: ${cur_liab_val:,.2f}, Non-Current: ${non_cur_liab_val:,.2f})\n"
+            f"- **Stockholders' Equity**: ${eq_val:,.2f}\n"
             f"The balance sheet is fully balanced with $Assets = Liabilities + Equity$."
         )
     elif "roe" in q or "return on equity" in q:
@@ -295,9 +304,11 @@ def answer_financial_query(query: str, statements: Dict[str, Any], ratios: Dict[
     else:
         np_str = f"Net Margin: {np_margin:.1f}%" if np_margin is not None else "N/A"
         cr_str = f"{cr:.2f}" if cr is not None else "N/A"
+        h_score_val = ai_reports.get("health_score")
+        h_score_str = f"{h_score_val}/100" if isinstance(h_score_val, (int, float)) else str(h_score_val or "NOT_CALCULABLE")
         return (
             f"**Company Performance Overview**:\n"
-            f"- Financial Health Score: **{ai_reports.get('health_score', 85)}/100**\n"
+            f"- Financial Health Score: **{h_score_str}**\n"
             f"- Total Revenue: ${rev:,.2f} | Net Income: ${net_inc:,.2f} ({np_str})\n"
             f"- Current Ratio: {cr_str} | WACC: {wacc:.1f}%\n"
             f"{ai_reports.get('executive_summary', '')}"

@@ -34,6 +34,13 @@ def get_analysis_results(upload_id: int, db: Session = Depends(get_db), current_
     items = []
     for f in fd_items:
         meta = f.metadata_json or {}
+        col = meta.get("source_column") or meta.get("column", "A")
+        row = meta.get("source_row") or meta.get("row", 1)
+        src_cell = meta.get("source_cell") or f"{col}{row}"
+        src_sheet = meta.get("source_sheet") or meta.get("sheet", "Sheet1")
+        raw_hdr = meta.get("period_raw") or meta.get("source_header") or meta.get("fiscal_year", "")
+        f_yr = meta.get("fiscal_year") or meta.get("period_raw") or ""
+
         items.append({
             "account_code": f.account_code,
             "account_name": f.account_name,
@@ -41,18 +48,26 @@ def get_analysis_results(upload_id: int, db: Session = Depends(get_db), current_
             "debit": f.debit,
             "credit": f.credit,
             "net_amount": f.net_amount,
-            "sheet": meta.get("sheet", "Sheet1"),
-            "row": meta.get("row", 1),
-            "column": meta.get("column", "A"),
+            "value": f.net_amount,
+            "raw_value": meta.get("raw_value", f.net_amount),
+            "sheet": src_sheet,
+            "row": row,
+            "column": col,
             "year": meta.get("year", "Current"),
             "unit": meta.get("unit", "Units"),
             "currency": meta.get("currency", "USD"),
+            "source_sheet": src_sheet,
+            "source_cell": src_cell,
+            "source_column": col,
+            "source_row": row,
+            "source_header": raw_hdr,
+            "period_raw": raw_hdr,
             "source_label": meta.get("source_label", f.account_name),
             "source_value": meta.get("source_value", f.net_amount),
             "is_summary": meta.get("is_summary", False),
             "is_quarterly": meta.get("is_quarterly", False),
             "period_type": meta.get("period_type", "ANNUAL"),
-            "fiscal_year": meta.get("fiscal_year", ""),
+            "fiscal_year": f_yr,
             "period_id": meta.get("period_id", ""),
             "scope": meta.get("scope", "STANDALONE")
         })

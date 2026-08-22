@@ -21,7 +21,7 @@ def test_financial_engine_pipeline():
         {"account_code": "102", "account_name": "Trade Receivables", "account_type": "RECEIVABLE_ASSET", "debit": 300000.0, "credit": 0.0, "net_amount": 300000.0, "sheet": "TB"},
         {"account_code": "103", "account_name": "Product Inventory", "account_type": "INVENTORY_ASSET", "debit": 200000.0, "credit": 0.0, "net_amount": 200000.0, "sheet": "TB"},
         {"account_code": "201", "account_name": "Trade Payables", "account_type": "PAYABLE_LIABILITY", "debit": 0.0, "credit": 200000.0, "net_amount": -200000.0, "sheet": "TB"},
-        {"account_code": "301", "account_name": "Shareholders Equity", "account_type": "EQUITY", "debit": 0.0, "credit": 500000.0, "net_amount": -500000.0, "sheet": "TB"},
+        {"account_code": "301", "account_name": "Shareholders Equity", "account_type": "EQUITY", "debit": 0.0, "credit": 800000.0, "net_amount": -800000.0, "sheet": "TB"},
         {"account_code": "401", "account_name": "Sales Revenue", "account_type": "REVENUE", "debit": 0.0, "credit": 2000000.0, "net_amount": -2000000.0, "sheet": "TB"},
         {"account_code": "501", "account_name": "Cost of Goods Sold", "account_type": "COGS", "debit": 1000000.0, "credit": 0.0, "net_amount": 1000000.0, "sheet": "TB"},
         {"account_code": "502", "account_name": "Salaries & Rent", "account_type": "EXPENSE", "debit": 400000.0, "credit": 0.0, "net_amount": 400000.0, "sheet": "TB"}

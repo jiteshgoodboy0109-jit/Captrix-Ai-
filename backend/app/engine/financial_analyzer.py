@@ -17,6 +17,9 @@ def safe_ratio(num: float, den: float, multiply_100: bool = False, decimal_place
     }
 
 def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
+    val_report = statements.get("validation_report", {})
+    bs_valid = val_report.get("balance_sheet_check", "PASS") == "PASS"
+
     inc = statements.get("income_statement", {})
     bs = statements.get("balance_sheet", {})
     
@@ -39,18 +42,23 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     total_liab = bs.get("total_liabilities", 0.0)
     
     equity_dict = bs.get("equity", {})
-    equity = equity_dict.get("total_equity", 0.0) if isinstance(equity_dict, dict) else 0.0
+    equity = equity_dict.get("total_equity") if isinstance(equity_dict, dict) else None
+    if equity == 0.0 and not equity_dict.get("common_stock"):
+        equity = None
     
     lt_liab_dict = bs.get("long_term_liabilities", {})
     long_debt = lt_liab_dict.get("total_long_term_liabilities", 0.0) if isinstance(lt_liab_dict, dict) else float(lt_liab_dict or 0.0)
 
+    if not bs_valid or equity is None:
+        ratio_status = "NOT_CALCULABLE"
+
     # 1. Liquidity Ratios
-    cr_res = safe_ratio(ca, cl)
+    cr_res = safe_ratio(ca, cl) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
     quick_assets = ca - inv
-    qr_res = safe_ratio(quick_assets, cl)
-    cash_r_res = safe_ratio(cash, cl)
+    qr_res = safe_ratio(quick_assets, cl) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
+    cash_r_res = safe_ratio(cash, cl) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
     working_capital = ca - cl
-    wc_r_res = safe_ratio(working_capital, rev, multiply_100=True)
+    wc_r_res = safe_ratio(working_capital, rev, multiply_100=True) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
 
     liquidity = {
         "current_ratio": {
@@ -100,13 +108,13 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     # 2. Profitability Ratios
-    gp_res = safe_ratio(gp, rev, multiply_100=True)
-    np_res = safe_ratio(net_inc, rev, multiply_100=True)
-    roa_res = safe_ratio(net_inc, total_assets, multiply_100=True)
-    roe_res = safe_ratio(net_inc, equity, multiply_100=True)
+    gp_res = safe_ratio(gp, rev, multiply_100=True) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
+    np_res = safe_ratio(net_inc, rev, multiply_100=True) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
+    roa_res = safe_ratio(net_inc, total_assets, multiply_100=True) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
+    roe_res = safe_ratio(net_inc, equity, multiply_100=True) if (bs_valid and equity) else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
     
-    capital_employed = (equity + long_debt) if (equity + long_debt) > 0 else (total_assets - cl)
-    if capital_employed <= 0 or ebit is None or ebit == 0:
+    capital_employed = (equity + long_debt) if (equity is not None and (equity + long_debt) > 0) else (total_assets - cl)
+    if not bs_valid or capital_employed is None or capital_employed <= 0 or ebit is None or ebit == 0:
         roce_res = {
             "value": None,
             "display_value": "NOT_CALCULABLE",
@@ -189,15 +197,20 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     # 3. Solvency & Debt Ratios
-    st_debt = curr_liab.get("short_term_debt", 0.0) if isinstance(curr_liab, dict) else 0.0
-    lt_debt = lt_liab_dict.get("long_term_debt", 0.0) if isinstance(lt_liab_dict, dict) else 0.0
-    total_interest_debt = st_debt + lt_debt
-    debt_for_de = total_interest_debt if total_interest_debt > 0 else total_liab
+    st_borrowings = curr_liab.get("short_term_borrowings", 0.0) if isinstance(curr_liab, dict) else 0.0
+    if not st_borrowings:
+        st_borrowings = curr_liab.get("short_term_debt", 0.0) if isinstance(curr_liab, dict) else 0.0
+    lt_borrowings = lt_liab_dict.get("long_term_borrowings", 0.0) if isinstance(lt_liab_dict, dict) else 0.0
+    if not lt_borrowings:
+        lt_borrowings = lt_liab_dict.get("long_term_debt", 0.0) if isinstance(lt_liab_dict, dict) else 0.0
+        
+    total_borrowings = st_borrowings + lt_borrowings
+    debt_for_de = total_borrowings if total_borrowings > 0 else total_liab
 
-    de_res = safe_ratio(debt_for_de, equity)
-    dr_res = safe_ratio(total_liab, total_assets)
-    eq_r_res = safe_ratio(equity, total_assets)
-    ic_res = safe_ratio(ebit, interest)
+    de_res = safe_ratio(debt_for_de, equity) if (bs_valid and equity) else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
+    dr_res = safe_ratio(total_liab, total_assets, multiply_100=True) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
+    eq_r_res = safe_ratio(equity, total_assets, multiply_100=True) if (bs_valid and equity) else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
+    ic_res = safe_ratio(ebit, interest) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
 
     solvency = {
         "debt_to_equity": {
@@ -333,13 +346,13 @@ def calculate_corporate_finance(statements: Dict[str, Any], ratios: Dict[str, An
     cl = curr_liab.get("total_current_liabilities", 0.0) if isinstance(curr_liab, dict) else 0.0
     pay = curr_liab.get("accounts_payable", 0.0) if isinstance(curr_liab, dict) else 0.0
 
-    total_liab = bs.get("total_liabilities", 0.0)
+    total_liab = bs.get("total_liabilities") or 0.0
     
     equity_dict = bs.get("equity", {})
-    equity = equity_dict.get("total_equity", 0.0) if isinstance(equity_dict, dict) else 0.0
+    equity = (equity_dict.get("total_equity") if isinstance(equity_dict, dict) else (equity_dict if isinstance(equity_dict, (int, float)) else 0.0)) or 0.0
 
     lt_liab_dict = bs.get("long_term_liabilities", {})
-    long_debt = lt_liab_dict.get("total_long_term_liabilities", 0.0) if isinstance(lt_liab_dict, dict) else float(lt_liab_dict or 0.0)
+    long_debt = (lt_liab_dict.get("total_long_term_liabilities") if isinstance(lt_liab_dict, dict) else (lt_liab_dict if isinstance(lt_liab_dict, (int, float)) else 0.0)) or 0.0
 
     # Working Capital & Cash Conversion Cycle (CCC)
     dio = round((inv / cogs_val) * 365, 1) if cogs_val > 0 else 0.0

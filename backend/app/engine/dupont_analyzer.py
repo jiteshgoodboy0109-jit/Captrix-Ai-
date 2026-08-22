@@ -12,15 +12,15 @@ def calculate_dupont_analysis(statements: Dict[str, Any], ratios: Dict[str, Any]
     inc = statements.get("income_statement", {})
     bs = statements.get("balance_sheet", {})
 
-    rev = float(inc.get("total_revenue", 0.0))
-    net_inc = float(inc.get("net_income", 0.0))
-    ebit = float(inc.get("ebit", 0.0))
-    ebt = float(inc.get("ebt", 0.0))
+    rev = float(inc.get("total_revenue") or 0.0)
+    net_inc = float(inc.get("net_income") or 0.0)
+    ebit = float(inc.get("ebit") or 0.0)
+    ebt = float(inc.get("ebt") or 0.0)
     
-    total_assets = float(bs.get("total_assets", 0.0))
+    total_assets = float(bs.get("total_assets") or 0.0)
     
     eq_dict = bs.get("equity", {})
-    equity = float(eq_dict.get("total_equity", 0.0)) if isinstance(eq_dict, dict) else float(bs.get("total_equity", 0.0) or 0.0)
+    equity = float((eq_dict.get("total_equity") if isinstance(eq_dict, dict) else bs.get("total_equity")) or 0.0)
 
     # 1. Core Component Ratios
     npm = (net_inc / rev) if rev > 0 else 0.0

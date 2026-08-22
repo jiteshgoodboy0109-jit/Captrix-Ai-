@@ -12,21 +12,21 @@ def calculate_risk_intelligence(statements: Dict[str, Any], ratios: Dict[str, An
     cf = statements.get("cash_flow", {}) or statements.get("cash_flow_statement", {})
     
     rev = float(inc.get("total_revenue", 0.0))
-    ebit = float(inc.get("ebit", 0.0))
-    net_inc = float(inc.get("net_income", 0.0))
+    ebit = float(inc.get("ebit") or 0.0)
+    net_inc = float(inc.get("net_income") or 0.0)
 
     curr_assets = bs.get("current_assets", {})
-    ca = float(curr_assets.get("total_current_assets", 0.0)) if isinstance(curr_assets, dict) else 0.0
+    ca = float((curr_assets.get("total_current_assets") if isinstance(curr_assets, dict) else curr_assets) or 0.0)
     
     curr_liab = bs.get("current_liabilities", {})
-    cl = float(curr_liab.get("total_current_liabilities", 0.0)) if isinstance(curr_liab, dict) else 0.0
+    cl = float((curr_liab.get("total_current_liabilities") if isinstance(curr_liab, dict) else curr_liab) or 0.0)
     
     working_capital = ca - cl
-    total_assets = float(bs.get("total_assets", 1.0)) or 1.0
-    total_liab = float(bs.get("total_liabilities", 1.0)) or 1.0
+    total_assets = float(bs.get("total_assets") or 1.0) or 1.0
+    total_liab = float(bs.get("total_liabilities") or 1.0) or 1.0
     
     eq_dict = bs.get("equity", {})
-    equity = float(eq_dict.get("total_equity", 0.0)) if isinstance(eq_dict, dict) else 0.0
+    equity = float((eq_dict.get("total_equity") if isinstance(eq_dict, dict) else eq_dict) or 0.0)
     
     if isinstance(eq_dict, dict) and "retained_earnings" in eq_dict and eq_dict["retained_earnings"] != 0.0:
         retained_earnings = float(eq_dict["retained_earnings"])

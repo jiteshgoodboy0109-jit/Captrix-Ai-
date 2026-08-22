@@ -193,6 +193,10 @@ def validate_health_score_consistency(
     score = health_obj["score"]
     
     narrative = ai_reports.get("executive_summary", "")
-    if f"{score:.1f}" not in narrative and f"{int(score)}" not in narrative:
-        raise HealthScoreConsistencyError(f"Health score consistency failure: canonical score {score} not found in AI narrative text.")
+    if isinstance(score, (int, float)):
+        if f"{score:.1f}" not in narrative and f"{int(score)}" not in narrative:
+            raise HealthScoreConsistencyError(f"Health score consistency failure: canonical score {score} not found in AI narrative text.")
+    else:
+        if str(score) not in narrative:
+            raise HealthScoreConsistencyError(f"Health score consistency failure: canonical score {score} not found in AI narrative text.")
 
