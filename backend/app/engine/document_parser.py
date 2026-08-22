@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Tuple, Optional
+from app.engine.currency_engine import identify_currency
 
 ACCOUNT_TYPE_RULES = {
     "REVENUE": [r"revenue", r"sales", r"income", r"turnover", r"fees earned", r"service revenue", r"gain"],
@@ -195,10 +196,10 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
             col_str = str(col).strip()
             col_lower = col_str.lower()
             
-            for kw, curr in currency_map.items():
-                if kw in col_lower and detected_currency == "USD":
-                    detected_currency = curr
-                    
+            iso_found, _ = identify_currency(col_str, filename)
+            if iso_found != "USD" or detected_currency == "USD":
+                detected_currency = iso_found
+            
             for kw, u in unit_map:
                 if kw in col_lower:
                     detected_unit = u
