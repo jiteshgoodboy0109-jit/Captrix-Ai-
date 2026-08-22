@@ -1,4 +1,5 @@
 import io
+import os
 import re
 import math
 import json
@@ -328,7 +329,7 @@ def classify_account(name: str, sheet_context: str = "") -> str:
 
     return "EXPENSE" if ("cost" in name_lower or "fee" in name_lower or "exp" in name_lower) else "EXPENSE"
 
-def detect_year_columns(headers: List[Any], top_rows: List[List[Any]]) -> Dict[int, Dict[str, str]]:
+def detect_year_columns(headers: List[Any], top_rows: List[List[Any]]) -> Dict[int, Dict[str, Any]]:
     """Scan headers and provided top rows to locate financial year column indices accurately by reading raw cell header values."""
     scan_rows = [headers] + top_rows
     best_row_year_map = {}
@@ -341,20 +342,32 @@ def detect_year_columns(headers: List[Any], top_rows: List[List[Any]]) -> Dict[i
                 continue
             raw_cell_str = str(cell).strip()
             
+            m_q = re.search(r'\b(Q[1-4])\b', raw_cell_str, re.IGNORECASE)
             m_fy = re.search(r'\bFY\s*([0-9]{2,4})\b', raw_cell_str, re.IGNORECASE)
+            m_yr_range = re.search(r'\b(20[0-9]{2})[-/]([0-9]{2,4})\b', raw_cell_str)
             m_year = re.search(r'\b(201[5-9]|202[0-9]|2030)\b', raw_cell_str)
+            
+            is_q = bool(m_q)
+            q_str = m_q.group(1).upper() if m_q else None
             
             yr_str = None
             if m_fy:
                 fy_val = m_fy.group(1)
                 yr_str = f"20{fy_val}" if len(fy_val) == 2 else fy_val
+            elif m_yr_range:
+                end_y = m_yr_range.group(2)
+                yr_str = f"20{end_y}" if len(end_y) == 2 else end_y
             elif m_year:
                 yr_str = m_year.group(1)
                 
             if yr_str:
                 row_years[col_idx] = {
                     "year": yr_str,
-                    "raw_header": raw_cell_str
+                    "raw_header": raw_cell_str,
+                    "fiscal_year": f"FY{yr_str}",
+                    "period_type": "QUARTERLY" if is_q else "ANNUAL",
+                    "quarter": q_str,
+                    "is_quarterly": is_q
                 }
                 
         if len(row_years) > max_years_in_row:
@@ -371,20 +384,32 @@ def detect_year_columns(headers: List[Any], top_rows: List[List[Any]]) -> Dict[i
                 continue
             raw_cell_str = str(cell).strip()
             
+            m_q = re.search(r'\b(Q[1-4])\b', raw_cell_str, re.IGNORECASE)
             m_fy = re.search(r'\bFY\s*([0-9]{2,4})\b', raw_cell_str, re.IGNORECASE)
+            m_yr_range = re.search(r'\b(20[0-9]{2})[-/]([0-9]{2,4})\b', raw_cell_str)
             m_year = re.search(r'\b(201[5-9]|202[0-9]|2030)\b', raw_cell_str)
+            
+            is_q = bool(m_q)
+            q_str = m_q.group(1).upper() if m_q else None
             
             yr_str = None
             if m_fy:
                 fy_val = m_fy.group(1)
                 yr_str = f"20{fy_val}" if len(fy_val) == 2 else fy_val
+            elif m_yr_range:
+                end_y = m_yr_range.group(2)
+                yr_str = f"20{end_y}" if len(end_y) == 2 else end_y
             elif m_year:
                 yr_str = m_year.group(1)
                 
             if yr_str:
                 year_map[col_idx] = {
                     "year": yr_str,
-                    "raw_header": raw_cell_str
+                    "raw_header": raw_cell_str,
+                    "fiscal_year": f"FY{yr_str}",
+                    "period_type": "QUARTERLY" if is_q else "ANNUAL",
+                    "quarter": q_str,
+                    "is_quarterly": is_q
                 }
                 
     return year_map
@@ -437,7 +462,104 @@ def detect_columns(df: pd.DataFrame) -> Dict[str, str]:
 
     return mapping
 
-import os
+from abc import ABC, abstractmethod
+
+class DocumentAdapter(ABC):
+    """
+    Abstract Base Adapter for extracting structured raw financial tables
+    from distinct file formats (Excel, PDF, CSV, JSON, TXT).
+    """
+    @abstractmethod
+    def extract_sheets(self, file_bytes: bytes, filename: str) -> Dict[str, pd.DataFrame]:
+        pass
+
+class ExcelAdapter(DocumentAdapter):
+    def extract_sheets(self, file_bytes: bytes, filename: str) -> Dict[str, pd.DataFrame]:
+        sheet_data = {}
+        try:
+            xls = pd.ExcelFile(io.BytesIO(file_bytes))
+            for sheet in xls.sheet_names:
+                try:
+                    sheet_data[sheet] = pd.read_excel(xls, sheet_name=sheet)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return sheet_data
+
+class CSVAdapter(DocumentAdapter):
+    def extract_sheets(self, file_bytes: bytes, filename: str) -> Dict[str, pd.DataFrame]:
+        try:
+            df = pd.read_csv(io.BytesIO(file_bytes), sep=None, engine='python')
+            return {"Sheet1": df}
+        except Exception:
+            return {}
+
+class PDFAdapter(DocumentAdapter):
+    def extract_sheets(self, file_bytes: bytes, filename: str) -> Dict[str, pd.DataFrame]:
+        records = []
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+            current_years: List[str] = []
+            
+            for page_idx, page in enumerate(reader.pages):
+                page_text = page.extract_text()
+                if not page_text:
+                    continue
+                lines = page_text.splitlines()
+                header_buffer = ""
+                for line in lines:
+                    line_str = line.strip()
+                    if not line_str:
+                        continue
+                    
+                    # Extract years in appearance order
+                    years_in_line = re.findall(r'\b(?:FY\s*)?(20[1-3][0-9])(?:\s*[-/]\s*(\d{2,4}))?\b', line_str, re.IGNORECASE)
+                    if len(years_in_line) >= 2:
+                        extracted_years = []
+                        for m in years_in_line:
+                            base_yr = m[0]
+                            suff_yr = m[1]
+                            if suff_yr:
+                                full_yr = base_yr[:2] + suff_yr if len(suff_yr) == 2 else suff_yr
+                                extracted_years.append(full_yr)
+                            else:
+                                extracted_years.append(base_yr)
+                        current_years = extracted_years
+                        continue
+                    
+                    tokens = line_str.split()
+                    if len(tokens) < 2:
+                        continue
+                    num_tokens = []
+                    text_tokens = []
+                    for t in reversed(tokens):
+                        t_clean = t.replace("$", "").replace("₹", "").replace("€", "").replace("£", "").replace(",", "").replace("(", "").replace(")", "").strip()
+                        if t_clean in ["—", "–", "-", ""] or (t_clean.replace(".", "", 1).isdigit() and t_clean.replace(".", "", 1) != ""):
+                            num_tokens.insert(0, t)
+                        else:
+                            text_tokens.insert(0, t)
+                    if not num_tokens or not text_tokens:
+                        continue
+                    label = " ".join(text_tokens)
+                    mapped = {}
+                    num_vals = [clean_value(v) for v in num_tokens]
+                    
+                    if current_years:
+                        for i, val in enumerate(num_vals):
+                            if i < len(current_years):
+                                mapped[current_years[i]] = val
+                    else:
+                        for i, val in enumerate(num_vals):
+                            mapped[f"UNKNOWN_PERIOD_{i+1}"] = val
+
+                    records.append({"Particulars": label, **mapped})
+        except Exception:
+            pass
+        if records:
+            return {"Sheet1": pd.DataFrame(records)}
+        return {}
 
 def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     sheet_data = {}
@@ -445,8 +567,20 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     detected_sheets = []
     
     fname = (filename or "").lower()
-    
     meta_info = {"company_name": "Enterprise Entity", "currency": "USD", "unit": "Units"}
+
+    if fname.endswith(".csv") or fname.endswith(".tsv"):
+        adapter = CSVAdapter()
+        sheet_data = adapter.extract_sheets(file_bytes, filename)
+        detected_sheets = list(sheet_data.keys())
+    elif fname.endswith(".pdf"):
+        adapter = PDFAdapter()
+        sheet_data = adapter.extract_sheets(file_bytes, filename)
+        detected_sheets = list(sheet_data.keys())
+    else:
+        adapter = ExcelAdapter()
+        sheet_data = adapter.extract_sheets(file_bytes, filename)
+        detected_sheets = list(sheet_data.keys())
 
     try:
         if fname.endswith(".csv") or fname.endswith(".tsv"):
@@ -499,7 +633,7 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                 "balance sheet"
             ]
             
-            current_years = ["2024", "2025", "2026"]
+            current_years: List[str] = []
             
             for page_idx, page in enumerate(reader.pages):
                 page_text = page.extract_text()
@@ -516,9 +650,18 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                     if not line_str:
                         continue
                     
-                    years_in_line = re.findall(r'\b(201[5-9]|202[0-9]|2030)\b', line_str)
+                    years_in_line = re.findall(r'\b(?:FY\s*)?(20[1-3][0-9])(?:\s*[-/]\s*(\d{2,4}))?\b', line_str, re.IGNORECASE)
                     if len(years_in_line) >= 2:
-                        current_years = sorted(list(set(years_in_line)))
+                        extracted_years = []
+                        for m in years_in_line:
+                            base_yr = m[0]
+                            suff_yr = m[1]
+                            if suff_yr:
+                                full_yr = base_yr[:2] + suff_yr if len(suff_yr) == 2 else suff_yr
+                                extracted_years.append(full_yr)
+                            else:
+                                extracted_years.append(base_yr)
+                        current_years = extracted_years
                         continue
                     
                     tokens = line_str.split()
@@ -573,7 +716,7 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
             import docx
             doc = docx.Document(io.BytesIO(file_bytes))
             records = []
-            current_years = ["2024", "2025", "2026"]
+            current_years: List[str] = []
             
             text_lines = []
             for p in doc.paragraphs:
@@ -591,9 +734,18 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                 if not line_str:
                     continue
                 
-                years_in_line = re.findall(r'\b(201[5-9]|202[0-9]|2030)\b', line_str)
+                years_in_line = re.findall(r'\b(?:FY\s*)?(20[1-3][0-9])(?:\s*[-/]\s*(\d{2,4}))?\b', line_str, re.IGNORECASE)
                 if len(years_in_line) >= 2:
-                    current_years = sorted(list(set(years_in_line)))
+                    extracted_years = []
+                    for m in years_in_line:
+                        base_yr = m[0]
+                        suff_yr = m[1]
+                        if suff_yr:
+                            full_yr = base_yr[:2] + suff_yr if len(suff_yr) == 2 else suff_yr
+                            extracted_years.append(full_yr)
+                        else:
+                            extracted_years.append(base_yr)
+                    current_years = extracted_years
                     continue
                 
                 tokens = line_str.split()
@@ -648,15 +800,12 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         print(f"Excel read error for {filename}: {e}")
 
     SKIP_SHEETS = ["customization", "parameters", "template", "setup", "config", "instruction", "instructions", "notes", "readme"]
-    has_master_data_sheet = any("data sheet" in str(s).lower() for s in sheet_data.keys())
-    if has_master_data_sheet:
-        SKIP_SHEETS.extend(["profit & loss", "quarters", "balance sheet", "cash flow"])
 
     if sheet_data:
         meta_info = detect_company_and_currency(sheet_data, filename)
 
         for sheet_name, df in sheet_data.items():
-            if any(skip_kw in str(sheet_name).lower().strip() for skip_kw in SKIP_SHEETS):
+            if any(skip_kw in sheet_name.lower().strip() for skip_kw in SKIP_SHEETS):
                 continue
             if df.empty:
                 continue
@@ -739,9 +888,19 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                         if isinstance(col_info, dict):
                             year = col_info.get("year", "2026")
                             raw_hdr = col_info.get("raw_header", f"FY{year}")
+                            col_f_yr = col_info.get("fiscal_year")
+                            col_p_type = col_info.get("period_type")
+                            col_q = col_info.get("quarter")
+                            col_is_q = col_info.get("is_quarterly", False)
                         else:
                             year = str(col_info)
                             raw_hdr = f"FY{year}"
+                            col_f_yr = f"FY{year}"
+                            col_p_type = "ANNUAL"
+                            col_q = None
+                            col_is_q = False
+
+                        is_q_effective = col_is_q or is_quarterly_item or ("Q" in raw_hdr and "FY" in raw_hdr)
 
                         if col_idx < len(row):
                             val_raw = row.iloc[col_idx]
@@ -755,16 +914,16 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                             except ValueError:
                                 yr_val = 2026
 
-                            if is_quarterly_item:
+                            if is_q_effective:
                                 cal_yr = yr_val
-                                f_yr = "FY2027" if year == "2026" else f"FY{yr_val + 1}"
-                                p_id = "Q1_FY2027" if year == "2026" else f"Q1_FY{yr_val + 1}"
+                                f_yr = col_f_yr or ("FY2027" if year == "2026" else f"FY{yr_val + 1}")
+                                p_id = f"{col_q or 'Q1'}_{f_yr}"
                                 p_start = f"{yr_val}-04-01"
                                 p_end = f"{yr_val}-06-30"
                             else:
                                 cal_yr = yr_val
-                                f_yr = f"FY{yr_val}"
-                                p_id = f"FY{yr_val}"
+                                f_yr = col_f_yr or f"FY{yr_val}"
+                                p_id = f_yr
                                 p_start = f"{yr_val - 1}-04-01"
                                 p_end = f"{yr_val}-03-31"
 
@@ -786,11 +945,12 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                                 "account_name": acct_name,
                                 "account_type": acct_type or "UNCLASSIFIED",
                                 "is_summary": is_summary_or_total_row(acct_name),
-                                "is_quarterly": is_quarterly_item,
+                                "is_quarterly": is_q_effective,
                                 "calendar_year": cal_yr,
                                 "fiscal_year": f_yr,
+                                "quarter": col_q if is_q_effective else None,
                                 "period_raw": raw_hdr,
-                                "period_type": "QUARTERLY" if is_quarterly_item else "ANNUAL",
+                                "period_type": "QUARTERLY" if is_q_effective else "ANNUAL",
                                 "period_label": f_yr,
                                 "period_id": p_id,
                                 "period_start": p_start,
@@ -800,7 +960,7 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                                 "raw_value": val_raw,
                                 "raw_label": acct_name,
                                 "normalized_label": acct_name,
-                                "scope": "QUARTERLY" if is_quarterly_item else ("CONSOLIDATED" if "consolidated" in sheet_name.lower() or "consolidated" in acct_name.lower() else "STANDALONE"),
+                                "scope": "QUARTERLY" if is_q_effective else ("CONSOLIDATED" if "consolidated" in sheet_name.lower() or "consolidated" in acct_name.lower() else "STANDALONE"),
                                 "debit": abs(val) if (val is not None and acct_type and (acct_type in ["ASSET", "CASH_ASSET", "RECEIVABLE_ASSET", "INVENTORY_ASSET", "EXPENSE", "COGS", "DEPRECIATION_EXPENSE", "INTEREST_EXPENSE", "TAX_EXPENSE"] or "ASSET" in acct_type or "EXPENSE" in acct_type)) else 0.0,
                                 "credit": abs(val) if (val is not None and acct_type and (acct_type in ["LIABILITY", "PAYABLE_LIABILITY", "DEBT_LIABILITY", "EQUITY", "REVENUE", "OPERATING_INCOME", "NET_INCOME", "SALES", "OTHER_INCOME"] or "LIABILITY" in acct_type or "REVENUE" in acct_type or "EQUITY" in acct_type)) else 0.0,
                                 "net_amount": val,
@@ -810,6 +970,11 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                                 "year": year,
                                 "unit": meta_info["unit"],
                                 "currency": meta_info["currency"],
+                                "source_document": filename,
+                                "source_page": 1,
+                                "source_table": stmt_type,
+                                "source_row": acct_name,
+                                "source_column": raw_hdr,
                                 "source_sheet": sheet_name,
                                 "source_cell": src_cell,
                                 "source_row": row_num,
