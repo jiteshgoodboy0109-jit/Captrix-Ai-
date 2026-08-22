@@ -95,7 +95,8 @@ def calculate_financial_health_score(
         if not canonical_dataset:
             from app.engine.canonical_model import build_canonical_dataset
             items = statements.get("normalized_items", [])
-            canonical_dataset = build_canonical_dataset(items, "5_Wipro.xlsx")
+            filename = statements.get("ledger_summary", {}).get("filename", "Financial_Workbook.xlsx")
+            canonical_dataset = build_canonical_dataset(items, filename)
         rec = perform_source_to_result_reconciliation(canonical_dataset, statements, ratios)
         val = statements.get("validation_report", {})
         q_res = compute_financial_quality_score(rec, val)
@@ -108,4 +109,7 @@ def calculate_financial_health_score(
         "period_id": f"FY{target_year}",
         "methodology_version": "v1"
     }
+
+
+
 

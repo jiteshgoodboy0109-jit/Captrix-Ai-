@@ -14,7 +14,7 @@ from app.auth.jwt import get_current_user, User
 from app.engine.model_registry import get_registered_models, get_model_by_id
 from app.engine.document_profiler import profile_financial_document
 from app.engine.model_evaluator import run_automatic_model_discovery, evaluate_model_extraction
-from app.engine.wipro_benchmark import run_wipro_golden_benchmark, WIPRO_GROUND_TRUTH, CANDIDATE_MODEL_EXTRACTIONS
+from app.engine.wipro_benchmark import run_enterprise_golden_benchmark, run_wipro_golden_benchmark, ENTERPRISE_GROUND_TRUTH, CANDIDATE_MODEL_EXTRACTIONS
 
 router = APIRouter(prefix="/api/models", tags=["Model Discovery & Evaluation"])
 
@@ -29,18 +29,19 @@ def get_model_registry(current_user: User = Depends(get_current_user)):
 @router.get("/leaderboard")
 def get_model_leaderboard(current_user: User = Depends(get_current_user)):
     """Retrieve historical accuracy leaderboard across models."""
-    wipro_res = run_wipro_golden_benchmark()
+    res = run_enterprise_golden_benchmark()
     return {
-        "leaderboard": wipro_res["evaluations_leaderboard"],
-        "benchmark_name": wipro_res["benchmark_name"],
-        "top_performing_model": wipro_res["winner_model_name"],
-        "status": wipro_res["status"]
+        "leaderboard": res["evaluations_leaderboard"],
+        "benchmark_name": res["benchmark_name"],
+        "top_performing_model": res["winner_model_name"],
+        "status": res["status"]
     }
 
+@router.post("/universal-benchmark")
 @router.post("/wipro-benchmark")
-def execute_wipro_benchmark(current_user: User = Depends(get_current_user)):
-    """Execute the golden Wipro regression benchmark across all registered candidate models."""
-    return run_wipro_golden_benchmark()
+def execute_universal_benchmark(current_user: User = Depends(get_current_user)):
+    """Execute the universal golden accuracy benchmark across all registered candidate models."""
+    return run_enterprise_golden_benchmark()
 
 @router.post("/evaluate/{upload_id}")
 def evaluate_document_models(

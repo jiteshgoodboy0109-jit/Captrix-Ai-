@@ -23,7 +23,7 @@ interface ModelLeaderboardViewerProps {
 
 export default function ModelLeaderboardViewer({ uploadId }: ModelLeaderboardViewerProps) {
   const [evaluationData, setEvaluationData] = useState<any | null>(null);
-  const [wiproBenchmark, setWiproBenchmark] = useState<any | null>(null);
+  const [universalBenchmark, setUniversalBenchmark] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [benchmarkLoading, setBenchmarkLoading] = useState<boolean>(false);
 
@@ -48,13 +48,13 @@ export default function ModelLeaderboardViewer({ uploadId }: ModelLeaderboardVie
     }
   };
 
-  const handleRunWiproBenchmark = async () => {
+  const handleRunUniversalBenchmark = async () => {
     setBenchmarkLoading(true);
     try {
-      const res = await api.post('/api/models/wipro-benchmark');
-      setWiproBenchmark(res.data);
+      const res = await api.post('/api/models/universal-benchmark');
+      setUniversalBenchmark(res.data);
     } catch (e) {
-      console.log('Error running Wipro benchmark:', e);
+      console.log('Error running universal benchmark:', e);
     } finally {
       setBenchmarkLoading(false);
     }
@@ -72,7 +72,7 @@ export default function ModelLeaderboardViewer({ uploadId }: ModelLeaderboardVie
   const evalList = evaluationData?.evaluations_leaderboard || evaluationData?.leaderboard || [];
   const topWinner = evalList[0];
   const docProfile = evaluationData?.document_profile;
-  const activeBenchmark = wiproBenchmark || evaluationData;
+  const activeBenchmark = universalBenchmark || evaluationData;
 
   return (
     <div className="space-y-6">
@@ -98,7 +98,7 @@ export default function ModelLeaderboardViewer({ uploadId }: ModelLeaderboardVie
         </div>
 
         <button
-          onClick={handleRunWiproBenchmark}
+          onClick={handleRunUniversalBenchmark}
           disabled={benchmarkLoading}
           className="flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold transition-all shadow-sm shrink-0"
         >
@@ -107,7 +107,7 @@ export default function ModelLeaderboardViewer({ uploadId }: ModelLeaderboardVie
           ) : (
             <FileCheck className="w-4 h-4 text-brand-400" />
           )}
-          <span>Run Wipro Golden Benchmark</span>
+          <span>Run Universal Accuracy Benchmark</span>
         </button>
       </div>
 
