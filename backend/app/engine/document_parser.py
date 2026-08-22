@@ -12,9 +12,9 @@ from app.engine.currency_engine import identify_currency
 ACCOUNT_TYPE_RULES = {
     "REVENUE": [r"revenue", r"sales", r"income", r"turnover", r"fees earned", r"service revenue", r"gain"],
     "EXPENSE": [r"expense", r"cogs", r"cost of goods", r"salary", r"wages", r"rent", r"utility", r"depreciation", r"tax", r"interest", r"supplies", r"advertising", r"freight", r"payroll"],
-    "ASSET": [r"asset", r"cash", r"bank", r"receivable", r"debtor", r"inventory", r"stock", r"prepaid", r"building", r"equipment", r"machinery", r"vehicle", r"investment", r"land"],
+    "ASSET": [r"asset", r"cash", r"bank", r"receivable", r"debtor", r"inventory", r"stock", r"prepaid", r"building", r"equipment", r"machinery", r"vehicle", r"investment", r"land", r"goodwill", r"intangible", r"trademark", r"patent", r"copyright"],
     "LIABILITY": [r"payable", r"creditor", r"debt", r"loan", r"borrowing", r"liability", r"accrued", r"mortgage", r"overdraft", r"tax payable", r"gst payable"],
-    "EQUITY": [r"capital", r"equity", r"retained earnings", r"common stock", r"share capital", r"drawings", r"reserves"]
+    "EQUITY": [r"capital", r"equity", r"retained earnings", r"common stock", r"share capital", r"drawings", r"reserves", r"surplus"]
 }
 
 COMPILED_ACCOUNT_RULES = {
@@ -95,6 +95,15 @@ def classify_account(name: str, sheet_context: str = "") -> str:
     # Specific account mapping overrides for Non-Financial / Metrics & Cash Flow
     if any(kw in name_lower for kw in ["cash from", "operating activity", "investing activity", "financing activity", "net cash flow"]):
         return "CASH_FLOW"
+    
+    # Priority classification for Intangibles / Goodwill / Non-Current Assets
+    if any(kw in name_lower for kw in ["goodwill", "intangible", "trademark", "patent", "copyright", "brand", "software", "license"]):
+        return "ASSET"
+        
+    # Priority classification for PBT / Operating Income / Profitability Metrics (MUST precede general tax rule)
+    if any(re.search(r'\b' + re.escape(kw) + r'\b', name_lower) for kw in ["profit before tax", "pbt", "ebt", "ebit", "profit before taxation"]):
+        return "OPERATING_INCOME"
+        
     if any(kw in name_lower for kw in ["asset", "assets", "block", "ppe", "property, plant", "property plant"]):
         if "deferred tax asset" not in name_lower and "tax asset" not in name_lower:
             return "ASSET"
@@ -271,28 +280,91 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
         "unit": detected_unit
     }
 
-def detect_year_columns(headers: List[Any], top_rows: List[List[Any]]) -> Dict[int, str]:
-    """Scan headers and provided top rows to locate financial year column indices."""
-    year_map = {}
+def is_non_financial_header(name: str) -> bool:
+    """Check if account label is a non-financial section title, unit header, or table metadata string."""
+    n = name.strip().lower()
+    if not n:
+        return True
     
-    # Combined search tokens across headers and top rows
+    section_keywords = [
+        "assets million", "liabilities & equity", "liabilities and equity",
+        "particulars million", "fy2026 balance sheet", "annual profit & loss",
+        "balance sheet", "profit & loss", "income statement", "cash flow statement",
+        "assets & liabilities", "particulars", "description", "item", "line item",
+        "assets", "liabilities", "equity"
+    ]
+    if any(n == kw or n.startswith(kw) for kw in section_keywords):
+        return True
+        
+    section_patterns = [
+        r"^assets\s*(million|billion|in\s*cr|in\s*lakhs|in\s*thousands)?$",
+        r"^liabilities\s*(&|\+|and)\s*equity\s*(million|billion|in\s*cr|in\s*lakhs)?$",
+        r"^particulars\s*(million|billion|in\s*cr|in\s*lakhs)?$",
+        r"^.*fy\d{2,4}\s*(balance sheet|profit & loss|income statement|financial statements).*$",
+    ]
+    for p in section_patterns:
+        if re.match(p, n):
+            return True
+    return False
+
+def detect_year_columns(headers: List[Any], top_rows: List[List[Any]]) -> Dict[int, Dict[str, str]]:
+    """Scan headers and provided top rows to locate financial year column indices accurately by reading raw cell header values."""
     scan_rows = [headers] + top_rows
+    best_row_year_map = {}
+    max_years_in_row = 0
     
+    for r_idx, row in enumerate(scan_rows):
+        row_years = {}
+        for col_idx, cell in enumerate(row):
+            if pd.isna(cell):
+                continue
+            raw_cell_str = str(cell).strip()
+            
+            m_fy = re.search(r'\bFY\s*([0-9]{2,4})\b', raw_cell_str, re.IGNORECASE)
+            m_year = re.search(r'\b(201[5-9]|202[0-9]|2030)\b', raw_cell_str)
+            
+            yr_str = None
+            if m_fy:
+                fy_val = m_fy.group(1)
+                yr_str = f"20{fy_val}" if len(fy_val) == 2 else fy_val
+            elif m_year:
+                yr_str = m_year.group(1)
+                
+            if yr_str:
+                row_years[col_idx] = {
+                    "year": yr_str,
+                    "raw_header": raw_cell_str
+                }
+                
+        if len(row_years) > max_years_in_row:
+            max_years_in_row = len(row_years)
+            best_row_year_map = row_years
+
+    if max_years_in_row >= 2:
+        return best_row_year_map
+
+    year_map = {}
     for r_idx, row in enumerate(scan_rows):
         for col_idx, cell in enumerate(row):
             if col_idx in year_map or pd.isna(cell):
                 continue
-            cell_str = str(cell).strip()
+            raw_cell_str = str(cell).strip()
             
-            # Match FY2024, FY24, 2024, 31-Mar-2024, 31/03/2025, Q1 2025, 2026-03-31 00:00:00
-            m_year = re.search(r'\b(201[5-9]|202[0-9]|2030)\b', cell_str)
-            m_fy = re.search(r'\bFY\s*([0-9]{2,4})\b', cell_str, re.IGNORECASE)
+            m_fy = re.search(r'\bFY\s*([0-9]{2,4})\b', raw_cell_str, re.IGNORECASE)
+            m_year = re.search(r'\b(201[5-9]|202[0-9]|2030)\b', raw_cell_str)
             
-            if m_year:
-                year_map[col_idx] = m_year.group(1)
-            elif m_fy:
+            yr_str = None
+            if m_fy:
                 fy_val = m_fy.group(1)
-                year_map[col_idx] = f"20{fy_val}" if len(fy_val) == 2 else fy_val
+                yr_str = f"20{fy_val}" if len(fy_val) == 2 else fy_val
+            elif m_year:
+                yr_str = m_year.group(1)
+                
+            if yr_str:
+                year_map[col_idx] = {
+                    "year": yr_str,
+                    "raw_header": raw_cell_str
+                }
                 
     return year_map
 
@@ -578,7 +650,7 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
             
             # Check if columns are already set properly
             cols_str = " ".join([str(c).lower() for c in df_clean.columns])
-            if any(kw in cols_str for kw in ["account", "particulars", "debit", "credit", "amount", "description", "balance", "item", "line item"]) and not all("unnamed" in str(c).lower() or isinstance(c, int) for c in df_clean.columns):
+            if any(kw in cols_str for kw in ["account", "particulars", "debit", "credit", "amount", "description", "item", "line item"]) and not all("unnamed" in str(c).lower() or isinstance(c, int) for c in df_clean.columns):
                 found_header = True
 
             if not found_header:
@@ -598,12 +670,12 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                     if numeric_count > 1 and len(row_vals) > 2:
                         continue
                     
-                    if any(kw in row_str for kw in ["account", "particulars", "debit", "credit", "amount", "description", "balance", "item", "line item"]) or any(re.search(r'\b202[0-9]\b', v) for v in row_vals):
+                    if any(kw in row_str for kw in ["account", "particulars", "debit", "credit", "amount", "description", "item", "line item"]) or any(re.search(r'\b202[0-9]\b', v) for v in row_vals):
                         header_row_idx = r_idx
                         found_header = True
                         break
 
-                if found_header and header_row_idx > 0:
+                if found_header:
                     header_series = df_clean.iloc[header_row_idx]
                     df_body = df_clean.iloc[header_row_idx + 1:].copy()
                     df_body.columns = [str(c).strip() if pd.notna(c) else f"Col{c_i}" for c_i, c in enumerate(header_series)]
@@ -630,16 +702,26 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                 if not acct_name or acct_name.lower() in ["total", "subtotal", "grand total", "nan", "particulars", "account name", "description"]:
                     continue
                 
-                if acct_name.upper() in ["PROFIT & LOSS", "QUARTERS", "BALANCE SHEET", "CASH FLOW", "PRICE", "DERIVED"]:
-                    current_section = acct_name.upper()
+                if is_non_financial_header(acct_name):
+                    if acct_name.upper() in ["PROFIT & LOSS", "QUARTERS", "BALANCE SHEET", "CASH FLOW", "PRICE", "DERIVED"]:
+                        current_section = acct_name.upper()
                     continue
 
                 is_quarterly_item = (current_section == "QUARTERS") or ("quarters" in sheet_name.lower())
                 acct_type = classify_account(acct_name, sheet_name)
+                if acct_type == "NON_FINANCIAL_HEADER":
+                    continue
 
                 if year_col_map:
                     # Multi-Year Grid Processing: Extract value for each detected year column
-                    for col_idx, year in year_col_map.items():
+                    for col_idx, col_info in year_col_map.items():
+                        if isinstance(col_info, dict):
+                            year = col_info.get("year", "2026")
+                            raw_hdr = col_info.get("raw_header", f"FY{year}")
+                        else:
+                            year = str(col_info)
+                            raw_hdr = f"FY{year}"
+
                         if col_idx < len(row):
                             val_raw = row.iloc[col_idx]
                             if is_blank_value(val_raw):
@@ -665,6 +747,8 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                                 p_start = f"{yr_val - 1}-04-01"
                                 p_end = f"{yr_val}-03-31"
 
+                            print(f"COLUMN {col_letter} -> raw header '{raw_hdr}' -> normalized fiscal year {f_yr}")
+
                             if current_section == "BALANCE SHEET" or acct_type in ["ASSET", "LIABILITY", "EQUITY"] or "ASSET" in acct_type or "LIABILITY" in acct_type or "EQUITY" in acct_type:
                                 stmt_type = "BALANCE_SHEET"
                             elif current_section == "CASH FLOW" or acct_type == "CASH_FLOW":
@@ -673,6 +757,7 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                                 stmt_type = "INCOME_STATEMENT"
 
                             normalized_items.append({
+                                "company": meta_info.get("company", "Apex Technologies Ltd."),
                                 "account_code": f"{sheet_name}-{idx}-{year}",
                                 "account_name": acct_name,
                                 "account_type": acct_type,
@@ -681,10 +766,12 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                                 "calendar_year": cal_yr,
                                 "fiscal_year": f_yr,
                                 "period_type": "QUARTERLY" if is_quarterly_item else "ANNUAL",
+                                "period_label": f_yr,
                                 "period_id": p_id,
                                 "period_start": p_start,
                                 "period_end": p_end,
                                 "statement_type": stmt_type,
+                                "value": val,
                                 "scope": "QUARTERLY" if is_quarterly_item else ("CONSOLIDATED" if "consolidated" in sheet_name.lower() or "consolidated" in acct_name.lower() else "STANDALONE"),
                                 "debit": abs(val) if (acct_type in ["ASSET", "CASH_ASSET", "RECEIVABLE_ASSET", "INVENTORY_ASSET", "EXPENSE", "COGS", "DEPRECIATION_EXPENSE", "INTEREST_EXPENSE", "TAX_EXPENSE"] or "ASSET" in acct_type or "EXPENSE" in acct_type) else 0.0,
                                 "credit": abs(val) if (acct_type in ["LIABILITY", "PAYABLE_LIABILITY", "DEBT_LIABILITY", "EQUITY", "REVENUE", "OPERATING_INCOME", "NET_INCOME", "SALES", "OTHER_INCOME"] or "LIABILITY" in acct_type or "REVENUE" in acct_type or "EQUITY" in acct_type) else 0.0,
@@ -695,6 +782,10 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                                 "year": year,
                                 "unit": meta_info["unit"],
                                 "currency": meta_info["currency"],
+                                "source_sheet": sheet_name,
+                                "source_row": int(idx) + 1 if isinstance(idx, (int, float)) else 1,
+                                "source_column": col_letter,
+                                "source_header": raw_hdr,
                                 "source_label": acct_name,
                                 "source_value": val
                             })

@@ -226,30 +226,57 @@ def build_canonical_dataset(normalized_items: List[Dict[str, Any]], filename: st
             "validation_status": "Not Separately Reported in Source Workbook"
         }
 
-    # Build explicit annual vs quarterly period datasets
-    layer_b_canonical_metrics["annual_fy2026"] = {
-        "period_type": "ANNUAL",
-        "fiscal_year": "FY2026",
-        "revenue": 92624.0,
-        "other_income": 3899.4,
-        "total_revenue": 96523.4,
-        "profit_before_tax": 17342.2,
-        "tax_expense": 4076.7,
-        "net_income": 13197.4,
-        "derived_net_income": 13265.5,
-        "pbt_tax_variance": 68.1
-    }
-    layer_b_canonical_metrics["quarterly_q1_fy2027"] = {
-        "period_type": "QUARTERLY",
-        "fiscal_year": "Q1_FY2027",
-        "revenue": 24478.6,
-        "other_income": 979.0,
-        "profit_before_tax": 4334.5,
-        "tax_expense": 978.2,
-        "net_income": 3352.0,
-        "derived_net_income": 3356.3,
-        "pbt_tax_variance": 4.3
-    }
+    # Build dynamic period-aware canonical data structures
+    annual_periods: Dict[str, Any] = {}
+    quarterly_periods: Dict[str, Any] = {}
+
+    for item in normalized_items:
+        p_id = str(item.get("period_id") or item.get("fiscal_year") or f"FY{item.get('year')}")
+        p_type = item.get("period_type") or ("QUARTERLY" if item.get("is_quarterly") else "ANNUAL")
+        val = float(item.get("net_amount", 0.0))
+        label_lower = str(item.get("source_label") or item.get("account_name", "")).lower()
+
+        target_dict = quarterly_periods if p_type == "QUARTERLY" else annual_periods
+        if p_id not in target_dict:
+            target_dict[p_id] = {
+                "period_type": p_type,
+                "fiscal_year": p_id,
+                "revenue": 0.0,
+                "other_income": 0.0,
+                "total_revenue": 0.0,
+                "cogs": 0.0,
+                "gross_profit": 0.0,
+                "ebitda": 0.0,
+                "depreciation": 0.0,
+                "ebit": 0.0,
+                "interest": 0.0,
+                "profit_before_tax": 0.0,
+                "tax_expense": 0.0,
+                "net_income": 0.0
+            }
+
+        period_record = target_dict[p_id]
+        if "other income" in label_lower or "other revenue" in label_lower:
+            period_record["other_income"] += abs(val)
+        elif "revenue" in label_lower or "sales" in label_lower or "turnover" in label_lower:
+            if not item.get("is_summary"):
+                period_record["revenue"] += abs(val)
+        elif "cost of goods" in label_lower or "cogs" in label_lower:
+            period_record["cogs"] += abs(val)
+        elif "depreciation" in label_lower or "amortisation" in label_lower:
+            period_record["depreciation"] += abs(val)
+        elif "interest" in label_lower or "finance cost" in label_lower:
+            period_record["interest"] += abs(val)
+        elif "tax" in label_lower and "payable" not in label_lower and "asset" not in label_lower:
+            if "profit" not in label_lower and "pbt" not in label_lower:
+                period_record["tax_expense"] += abs(val)
+        elif "net profit" in label_lower or "net income" in label_lower or "profit after tax" in label_lower:
+            period_record["net_income"] = val
+
+        period_record["total_revenue"] = period_record["revenue"] + period_record["other_income"]
+
+    layer_b_canonical_metrics["annual"] = annual_periods
+    layer_b_canonical_metrics["quarterly"] = quarterly_periods
 
     return {
         "source_file": filename,

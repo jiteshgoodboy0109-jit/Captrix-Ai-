@@ -104,8 +104,26 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     np_res = safe_ratio(net_inc, rev, multiply_100=True)
     roa_res = safe_ratio(net_inc, total_assets, multiply_100=True)
     roe_res = safe_ratio(net_inc, equity, multiply_100=True)
-    capital_employed = equity + long_debt
-    roce_res = safe_ratio(ebit, capital_employed, multiply_100=True)
+    
+    capital_employed = (equity + long_debt) if (equity + long_debt) > 0 else (total_assets - cl)
+    if capital_employed <= 0 or ebit is None or ebit == 0:
+        roce_res = {
+            "value": None,
+            "display_value": "NOT_CALCULABLE",
+            "is_calculable": False,
+            "status": "DATA_QUALITY_ERROR"
+        }
+    else:
+        calc_roce_val = safe_ratio(ebit, capital_employed, multiply_100=True)
+        if calc_roce_val["value"] is None or calc_roce_val["value"] > 100.0 or calc_roce_val["value"] < -100.0:
+            roce_res = {
+                "value": None,
+                "display_value": "NOT_CALCULABLE",
+                "is_calculable": False,
+                "status": "DATA_QUALITY_ERROR"
+            }
+        else:
+            roce_res = calc_roce_val
 
     profitability = {
         "gross_profit_margin": {
@@ -165,13 +183,18 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "(EBIT / Capital Employed) * 100",
             "inputs": {"EBIT": ebit, "Capital Employed": capital_employed},
             "benchmark": "> 12%",
-            "status": ("HEALTHY" if roce_res["value"] >= 12 else "WARNING") if roce_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": (f"Operating return on capital employed is negative at {roce_res['value']:.1f}%." if roce_res["value"] < 0 else f"Operating return on capital employed stands at {roce_res['value']:.1f}%.") if roce_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": roce_res.get("status") if "status" in roce_res else (("HEALTHY" if (roce_res["value"] or 0) >= 12 else "WARNING") if roce_res["is_calculable"] else "NOT_CALCULABLE"),
+            "interpretation": (f"Operating return on capital employed is negative at {roce_res['value']:.1f}%." if (roce_res["value"] or 0) < 0 else f"Operating return on capital employed stands at {roce_res['value']:.1f}%.") if roce_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
         }
     }
 
     # 3. Solvency & Debt Ratios
-    de_res = safe_ratio(total_liab, equity)
+    st_debt = curr_liab.get("short_term_debt", 0.0) if isinstance(curr_liab, dict) else 0.0
+    lt_debt = lt_liab_dict.get("long_term_debt", 0.0) if isinstance(lt_liab_dict, dict) else 0.0
+    total_interest_debt = st_debt + lt_debt
+    debt_for_de = total_interest_debt if total_interest_debt > 0 else total_liab
+
+    de_res = safe_ratio(debt_for_de, equity)
     dr_res = safe_ratio(total_liab, total_assets)
     eq_r_res = safe_ratio(equity, total_assets)
     ic_res = safe_ratio(ebit, interest)

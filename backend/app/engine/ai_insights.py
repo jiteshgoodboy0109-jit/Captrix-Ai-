@@ -97,13 +97,22 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
     np_str = f"{np_margin:.1f}% net margin" if np_margin is not None else "Net Margin: Not Calculable"
     de_str = f"Debt/Equity ratio of {de:.2f}" if de is not None else "Debt/Equity: Not Calculable"
 
-    tot_rev = inc.get("total_revenue", 96523.40)
+    tot_rev = inc.get("total_revenue", 0.0) or rev
+    op_rev = inc.get("revenue_from_operations") or inc.get("sales") or rev
+    other_inc_val = inc.get("other_income", 0.0)
+    pbt_val = inc.get("ebt", 0.0) or inc.get("operating_income", 0.0)
+    tax_val = inc.get("tax_expense", 0.0)
+    
+    other_inc_str = f"${other_inc_val:,.2f} Other Income; " if other_inc_val > 0 else ""
+    pbt_str = f"with Profit Before Tax of ${pbt_val:,.2f}, Tax Expense of ${tax_val:,.2f}, and " if pbt_val > 0 else ""
+    wacc_str = f", with an estimated Cost of Capital (WACC) of {wacc:.1f}%" if (wacc is not None and isinstance(wacc, (int, float))) else ""
+
     executive_summary = (
         f"Automated AI Financial Intelligence evaluation assigns an overall Financial Health Score of {health_score:.1f}/100. "
-        f"For the FY2026 Annual period, Sales revenue reaches ${rev:,.2f} ($3,899.40 Other Income; Total Recognized Revenue: ${tot_rev:,.2f}) "
-        f"with Profit Before Tax of $17,342.20, Tax Expense of $4,076.70, and Net Profit of ${net_inc:,.2f} ({np_str}). "
+        f"For the Annual period, Sales revenue reaches ${op_rev:,.2f} ({other_inc_str}Total Recognized Revenue: ${tot_rev:,.2f}) "
+        f"{pbt_str}Net Profit of ${net_inc:,.2f} ({np_str}). "
         f"Liquidity assessment indicates {cr_str}. "
-        f"Capital structure leverage is evaluated at {de_str}, with an estimated Cost of Capital (WACC) of {wacc:.1f}%."
+        f"Capital structure leverage is evaluated at {de_str}{wacc_str}."
     )
 
     strengths = []

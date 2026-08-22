@@ -72,4 +72,4 @@ def test_user_data_isolation_and_privacy():
     res_bob_del = client.delete(f"/api/history/{alice_hist_record_id}", headers=headers2)
     assert res_bob_del.status_code == 404, "SECURITY FAILURE: Bob deleted Alice's history record!"
 
-    print("\n✅ USER DATA ISOLATION TEST PASSED CLEANLY! Zero data leak between users.")
+    print("\n[SUCCESS] USER DATA ISOLATION TEST PASSED CLEANLY! Zero data leak between users.")
