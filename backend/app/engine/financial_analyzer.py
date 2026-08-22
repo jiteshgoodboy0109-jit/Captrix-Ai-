@@ -183,8 +183,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "(EBIT / Capital Employed) * 100",
             "inputs": {"EBIT": ebit, "Capital Employed": capital_employed},
             "benchmark": "> 12%",
-            "status": roce_res.get("status") if "status" in roce_res else (("HEALTHY" if (roce_res["value"] or 0) >= 12 else "WARNING") if roce_res["is_calculable"] else "NOT_CALCULABLE"),
-            "interpretation": (f"Operating return on capital employed is negative at {roce_res['value']:.1f}%." if (roce_res["value"] or 0) < 0 else f"Operating return on capital employed stands at {roce_res['value']:.1f}%.") if roce_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": roce_res.get("status") if "status" in roce_res else (("HEALTHY" if float(roce_res["value"] or 0) >= 12 else "WARNING") if roce_res["is_calculable"] else "NOT_CALCULABLE"),
+            "interpretation": (f"Operating return on capital employed is negative at {float(roce_res['value'] or 0):.1f}%." if float(roce_res["value"] or 0) < 0 else f"Operating return on capital employed stands at {float(roce_res['value'] or 0):.1f}%.") if roce_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
         }
     }
 

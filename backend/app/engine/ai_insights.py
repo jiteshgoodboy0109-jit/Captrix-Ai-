@@ -1,4 +1,4 @@
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 def compute_financial_health_score(statements: Dict[str, Any], ratios: Dict[str, Any]) -> Dict[str, Any]:
     prof = ratios.get("profitability", {})
@@ -293,6 +293,8 @@ def answer_financial_query(query: str, statements: Dict[str, Any], ratios: Dict[
             text += f"- **[{r['priority']}] {r['title']}**: {r['action']}\n"
         return text
     else:
+        np_str = f"Net Margin: {np_margin:.1f}%" if np_margin is not None else "N/A"
+        cr_str = f"{cr:.2f}" if cr is not None else "N/A"
         return (
             f"**Company Performance Overview**:\n"
             f"- Financial Health Score: **{ai_reports.get('health_score', 85)}/100**\n"
@@ -301,7 +303,7 @@ def answer_financial_query(query: str, statements: Dict[str, Any], ratios: Dict[
             f"{ai_reports.get('executive_summary', '')}"
         )
 
-def validate_ai_grounding(text: str, canonical_dataset: Dict[str, Any], statements: Dict[str, Any] = None, quality_report: Dict[str, Any] = None) -> Dict[str, Any]:
+def validate_ai_grounding(text: str, canonical_dataset: Dict[str, Any], statements: Optional[Dict[str, Any]] = None, quality_report: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Scans AI-generated text narrative for numeric financial claims and validates them against canonical ground truth.
     Flags AI_GROUNDING_ERROR if ungrounded numeric figures are present.

@@ -4,7 +4,7 @@ Calculates a 0.0 to 100.0 Quality Score across Extraction, Accounting Equations,
 Enforces that confidence level cannot be HIGH if critical reconciliation failures exist.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 def compute_financial_quality_score(
     reconciliation_report: Dict[str, Any],
@@ -115,7 +115,7 @@ def run_all_validations(
     canonical_dataset: Any,
     statements: Dict[str, Any],
     ratios: Dict[str, Any],
-    ai_insights: Dict[str, Any] = None
+    ai_insights: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Executes all mandatory financial validation gates prior to report generation.
