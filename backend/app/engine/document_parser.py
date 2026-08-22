@@ -16,6 +16,11 @@ ACCOUNT_TYPE_RULES = {
     "EQUITY": [r"capital", r"equity", r"retained earnings", r"common stock", r"share capital", r"drawings", r"reserves"]
 }
 
+COMPILED_ACCOUNT_RULES = {
+    category: [re.compile(p, re.IGNORECASE) for p in patterns]
+    for category, patterns in ACCOUNT_TYPE_RULES.items()
+}
+
 def clean_value(val: Any) -> float:
     """Safely convert cell value to float. Preserves signs and returns 0.0 for missing/invalid cells."""
     v = clean_value_or_none(val)
@@ -648,8 +653,8 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
 
                             if is_quarterly_item:
                                 cal_yr = yr_val
-                                f_yr = "FY2027" if str(year) == "2026" else f"FY{yr_val + 1}"
-                                p_id = "Q1_FY2027" if str(year) == "2026" else f"Q1_FY{yr_val + 1}"
+                                f_yr = "FY2027" if year == "2026" else f"FY{yr_val + 1}"
+                                p_id = "Q1_FY2027" if year == "2026" else f"Q1_FY{yr_val + 1}"
                                 p_start = f"{yr_val}-04-01"
                                 p_end = f"{yr_val}-06-30"
                             else:
