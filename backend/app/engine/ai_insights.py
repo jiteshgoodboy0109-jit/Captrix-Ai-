@@ -165,11 +165,17 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
             "title": "Immediate Liquidity Injection",
             "action": f"Secure short-term credit line or inject working capital to raise Current Ratio ({cr:.2f}) above 1.5x minimum safety threshold."
         })
-    else:
+    elif cr is not None and ccc is not None:
         recommendations.append({
             "priority": "HIGH (Immediate)",
             "title": "Working Capital & Cash Flow Optimization",
             "action": f"Accelerate receivable collections to compress Cash Conversion Cycle ({ccc:.1f} days) and liberate liquid cash reserves."
+        })
+    else:
+        recommendations.append({
+            "priority": "HIGH (Immediate)",
+            "title": "Operational Performance Optimization",
+            "action": "Maintain operating discipline and monitor ongoing operational performance and cash generation."
         })
 
     # Dynamic Medium Priority Recommendation
@@ -189,6 +195,7 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
 
     # Dynamic Strategic Priority Recommendation
     numeric_hs = float(health_score) if isinstance(health_score, (int, float)) else 0.0
+    st_borrowings_val = bs.get("current_liabilities", {}).get("short_term_borrowings") if isinstance(bs.get("current_liabilities"), dict) else None
     if numeric_hs >= 80:
         roe_str = f"{roe:.1f}%" if roe is not None else "N/A"
         recommendations.append({
@@ -196,11 +203,17 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
             "title": "Strategic Expansion & Capital Reinvestment",
             "action": f"Reinvest surplus return on equity ({roe_str}) into high-NPV capital budgeting expansion initiatives."
         })
-    else:
+    elif st_borrowings_val is not None and st_borrowings_val > 0:
         recommendations.append({
             "priority": "STRATEGIC (6-12 Months)",
             "title": "Capital Structure & Refinancing",
             "action": f"Refinance short-term liabilities utilizing target WACC benchmark of {wacc:.1f}% to lock in long-term fixed rate capital."
+        })
+    else:
+        recommendations.append({
+            "priority": "STRATEGIC (6-12 Months)",
+            "title": "Liability & Capital Structure Assessment",
+            "action": "Liability structure cannot be assessed because required liability/equity source data is incomplete or NOT_REPORTED."
         })
 
     val_rep = statements.get("validation_report", {})
@@ -211,13 +224,13 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
             "action": "Accounting equation mismatch detected in source statements. Reconcile source trial balance line items before deploying capital based on financial ratios."
         })
 
-    wc_r = _rval(ratios.get("liquidity", {}).get("working_capital_ratio", {}), 0.0)
+    wc_r = _rval(ratios.get("liquidity", {}).get("working_capital_ratio", {}))
     answers = {
         "is_profitable": "Yes, the company generates positive net income." if is_profitable else "No, the company operates at a net loss.",
         "is_healthy": f"The company is financially healthy with a score of {health_score}/100." if is_healthy else f"The company faces financial strain (Score: {health_score}/100).",
-        "debt_status": "Debt levels are conservative and manageable." if (de is not None and de <= 1.5) else "Debt is elevated and requires structured deleveraging.",
-        "liquidity_status": "Liquidity is robust with sufficient liquid assets." if (cr is not None and cr >= 1.5) else "Liquidity is constrained; short-term debt risk is elevated.",
-        "working_capital_status": "Working capital is sufficient for current operational requirements." if (wc_r is not None and wc_r >= 0.10) else "Working capital is deficit or constrained."
+        "debt_status": ("Debt levels are conservative and manageable." if (de is not None and de <= 1.5) else ("Debt is elevated and requires structured deleveraging." if de is not None else "Debt status cannot be evaluated because required liability/equity source data is incomplete.")),
+        "liquidity_status": ("Liquidity is robust with sufficient liquid assets." if (cr is not None and cr >= 1.5) else ("Liquidity is constrained; short-term debt risk is elevated." if cr is not None else "Liquidity status cannot be evaluated because required balance sheet source data is incomplete.")),
+        "working_capital_status": ("Working capital is sufficient for current operational requirements." if (wc_r is not None and wc_r >= 0.10) else ("Working capital is deficit or constrained." if wc_r is not None else "Working capital status cannot be evaluated because required balance sheet source data is incomplete."))
     }
 
     return {

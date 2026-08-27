@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 def safe_ratio(num: float, den: float, multiply_100: bool = False, decimal_places: int = 2) -> Dict[str, Any]:
     """Calculate ratio with zero-denominator and missing-input protection."""
@@ -33,11 +33,7 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     curr_assets = bs.get("current_assets", {})
     ca = curr_assets.get("total_current_assets", 0.0) if isinstance(curr_assets, dict) else 0.0
     cash = curr_assets.get("cash", 0.0) if isinstance(curr_assets, dict) else 0.0
-    rec = curr_assets.get("accounts_receivable", 0.0) if isinstance(curr_assets, dict) else 0.0
-    inv = curr_assets.get("inventory", 0.0) if isinstance(curr_assets, dict) else 0.0
-    
     curr_liab = bs.get("current_liabilities", {})
-    cl = curr_liab.get("total_current_liabilities", 0.0) if isinstance(curr_liab, dict) else 0.0
     total_assets = bs.get("total_assets", 0.0)
     total_liab = bs.get("total_liabilities", 0.0)
     
@@ -47,7 +43,13 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
         equity = None
     
     lt_liab_dict = bs.get("long_term_liabilities", {})
-    long_debt = lt_liab_dict.get("total_long_term_liabilities", 0.0) if isinstance(lt_liab_dict, dict) else float(lt_liab_dict or 0.0)
+
+    ca = float(curr_assets.get("total_current_assets") or 0.0) if isinstance(curr_assets, dict) else float(curr_assets or 0.0)
+    cl = float(curr_liab.get("total_current_liabilities") or 0.0) if isinstance(curr_liab, dict) else float(curr_liab or 0.0)
+    cash = float(curr_assets.get("cash_and_equivalents") or 0.0) if isinstance(curr_assets, dict) else 0.0
+    rec = float(curr_assets.get("accounts_receivable") or 0.0) if isinstance(curr_assets, dict) else 0.0
+    inv = float(curr_assets.get("inventory") or 0.0) if isinstance(curr_assets, dict) else 0.0
+    long_debt = float(lt_liab_dict.get("total_long_term_liabilities") or 0.0) if isinstance(lt_liab_dict, dict) else float(lt_liab_dict or 0.0)
 
     if not bs_valid or equity is None:
         ratio_status = "NOT_CALCULABLE"
@@ -60,6 +62,11 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     working_capital = ca - cl
     wc_r_res = safe_ratio(working_capital, rev, multiply_100=True) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
 
+    cr_val: Optional[float] = float(cr_res["value"]) if (cr_res["is_calculable"] and cr_res["value"] is not None) else None
+    qr_val: Optional[float] = float(qr_res["value"]) if (qr_res["is_calculable"] and qr_res["value"] is not None) else None
+    cash_r_val: Optional[float] = float(cash_r_res["value"]) if (cash_r_res["is_calculable"] and cash_r_res["value"] is not None) else None
+    wc_r_val: Optional[float] = float(wc_r_res["value"]) if (wc_r_res["is_calculable"] and wc_r_res["value"] is not None) else None
+
     liquidity = {
         "current_ratio": {
             "name": "Current Ratio",
@@ -69,8 +76,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "Current Assets / Current Liabilities",
             "inputs": {"Current Assets": ca, "Current Liabilities": cl},
             "benchmark": "> 1.5",
-            "status": ("HEALTHY" if cr_res["value"] >= 1.5 else ("WARNING" if cr_res["value"] >= 1.0 else "CRITICAL")) if cr_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": f"The company holds ${cr_res['value']:.2f} of current assets for every $1.00 of short-term liabilities." if cr_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if cr_val >= 1.5 else ("WARNING" if cr_val >= 1.0 else "CRITICAL")) if cr_val is not None else "NOT_CALCULABLE",
+            "interpretation": f"The company holds ${cr_val:.2f} of current assets for every $1.00 of short-term liabilities." if cr_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         },
         "quick_ratio": {
             "name": "Quick Ratio (Acid-Test)",
@@ -80,8 +87,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "(Current Assets - Inventory) / Current Liabilities",
             "inputs": {"Quick Assets": quick_assets, "Current Liabilities": cl},
             "benchmark": "> 1.0",
-            "status": ("HEALTHY" if qr_res["value"] >= 1.0 else ("WARNING" if qr_res["value"] >= 0.8 else "CRITICAL")) if qr_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": f"Quick ratio stands at {qr_res['value']:.2f}, excluding inventory." if qr_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if qr_val >= 1.0 else ("WARNING" if qr_val >= 0.8 else "CRITICAL")) if qr_val is not None else "NOT_CALCULABLE",
+            "interpretation": f"Quick ratio stands at {qr_val:.2f}, excluding inventory." if qr_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         },
         "cash_ratio": {
             "name": "Cash Ratio",
@@ -91,8 +98,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "Cash & Equivalents / Current Liabilities",
             "inputs": {"Cash": cash, "Current Liabilities": cl},
             "benchmark": "> 0.5",
-            "status": ("HEALTHY" if cash_r_res["value"] >= 0.5 else "WARNING") if cash_r_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": f"Cash reserves cover {cash_r_res['value'] * 100:.1f}% of current short-term liabilities." if cash_r_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if cash_r_val >= 0.5 else "WARNING") if cash_r_val is not None else "NOT_CALCULABLE",
+            "interpretation": f"Cash reserves cover {cash_r_val * 100:.1f}% of current short-term liabilities." if cash_r_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         },
         "working_capital_ratio": {
             "name": "Working Capital Ratio",
@@ -102,8 +109,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "(Current Assets - Current Liabilities) / Revenue",
             "inputs": {"Working Capital": working_capital, "Revenue": rev},
             "benchmark": "15% - 30%",
-            "status": ("HEALTHY" if 10.0 <= wc_r_res["value"] <= 35.0 else "WARNING") if wc_r_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": f"Working capital represents {wc_r_res['value']:.1f}% of annual revenues." if wc_r_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if 10.0 <= wc_r_val <= 35.0 else "WARNING") if wc_r_val is not None else "NOT_CALCULABLE",
+            "interpretation": f"Working capital represents {wc_r_val:.1f}% of annual revenues." if wc_r_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         }
     }
 
@@ -113,7 +120,7 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     roa_res = safe_ratio(net_inc, total_assets, multiply_100=True) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
     roe_res = safe_ratio(net_inc, equity, multiply_100=True) if (bs_valid and equity) else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
     
-    capital_employed = (equity + long_debt) if (equity is not None and (equity + long_debt) > 0) else (total_assets - cl)
+    capital_employed = (equity + long_debt) if (equity is not None and (equity + long_debt) > 0) else ((total_assets - cl) if total_assets is not None else None)
     if not bs_valid or capital_employed is None or capital_employed <= 0 or ebit is None or ebit == 0:
         roce_res = {
             "value": None,
@@ -133,6 +140,12 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
         else:
             roce_res = calc_roce_val
 
+    gp_val: Optional[float] = float(gp_res["value"]) if (gp_res["is_calculable"] and gp_res["value"] is not None) else None
+    np_val: Optional[float] = float(np_res["value"]) if (np_res["is_calculable"] and np_res["value"] is not None) else None
+    roa_val: Optional[float] = float(roa_res["value"]) if (roa_res["is_calculable"] and roa_res["value"] is not None) else None
+    roe_val: Optional[float] = float(roe_res["value"]) if (roe_res["is_calculable"] and roe_res["value"] is not None) else None
+    roce_val: Optional[float] = float(roce_res["value"]) if (roce_res["is_calculable"] and roce_res["value"] is not None) else None
+
     profitability = {
         "gross_profit_margin": {
             "name": "Gross Profit Margin",
@@ -143,8 +156,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "(Gross Profit / Total Revenue) * 100",
             "inputs": {"Gross Profit": gp, "Revenue": rev},
             "benchmark": "> 30%",
-            "status": ("HEALTHY" if gp_res["value"] >= 30 else ("WARNING" if gp_res["value"] >= 15 else "CRITICAL")) if gp_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": (f"Company yields a negative gross margin of {gp_res['value']:.1f}%." if gp_res["value"] < 0 else f"Company retains {gp_res['value']:.1f}% of revenue after direct production costs.") if gp_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if gp_val >= 30 else ("WARNING" if gp_val >= 15 else "CRITICAL")) if gp_val is not None else "NOT_CALCULABLE",
+            "interpretation": (f"Company yields a negative gross margin of {gp_val:.1f}%." if gp_val < 0 else f"Company retains {gp_val:.1f}% of revenue after direct production costs.") if gp_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         },
         "net_profit_margin": {
             "name": "Net Profit Margin",
@@ -155,8 +168,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "(Net Income / Total Revenue) * 100",
             "inputs": {"Net Income": net_inc, "Revenue": rev},
             "benchmark": "> 10%",
-            "status": ("HEALTHY" if np_res["value"] >= 10 else ("WARNING" if np_res["value"] >= 5 else "CRITICAL")) if np_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": (f"Company experienced a net loss margin of {np_res['value']:.1f}% on total revenue." if np_res["value"] < 0 else f"Company yields {np_res['value']:.1f}% net profit from total revenue.") if np_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if np_val >= 10 else ("WARNING" if np_val >= 5 else "CRITICAL")) if np_val is not None else "NOT_CALCULABLE",
+            "interpretation": (f"Company experienced a net loss margin of {np_val:.1f}% on total revenue." if np_val < 0 else f"Company yields {np_val:.1f}% net profit from total revenue.") if np_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         },
         "return_on_assets": {
             "name": "Return on Assets (ROA)",
@@ -167,8 +180,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "(Net Income / Total Assets) * 100",
             "inputs": {"Net Income": net_inc, "Total Assets": total_assets},
             "benchmark": "> 5%",
-            "status": ("HEALTHY" if roa_res["value"] >= 5 else "WARNING") if roa_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": (f"Incurs a net loss of ${abs(roa_res['value']):.2f} per $100 of total assets." if roa_res["value"] < 0 else f"Generates ${roa_res['value']:.2f} of net profit per $100 of total assets.") if roa_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if roa_val >= 5 else "WARNING") if roa_val is not None else "NOT_CALCULABLE",
+            "interpretation": (f"Incurs a net loss of ${abs(roa_val):.2f} per $100 of total assets." if roa_val < 0 else f"Generates ${roa_val:.2f} of net profit per $100 of total assets.") if roa_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         },
         "return_on_equity": {
             "name": "Return on Equity (ROE)",
@@ -179,8 +192,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "(Net Income / Total Equity) * 100",
             "inputs": {"Net Income": net_inc, "Total Equity": equity},
             "benchmark": "> 15%",
-            "status": ("HEALTHY" if roe_res["value"] >= 15 else ("WARNING" if roe_res["value"] >= 8 else "CRITICAL")) if roe_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": (f"Shareholders experience a {roe_res['value']:.1f}% net return on equity." if roe_res["value"] < 0 else f"Shareholders earn a {roe_res['value']:.1f}% return on equity invested.") if roe_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if roe_val >= 15 else ("WARNING" if roe_val >= 8 else "CRITICAL")) if roe_val is not None else "NOT_CALCULABLE",
+            "interpretation": (f"Shareholders experience a {roe_val:.1f}% net return on equity." if roe_val < 0 else f"Shareholders earn a {roe_val:.1f}% return on equity invested.") if roe_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         },
         "return_on_capital_employed": {
             "name": "ROCE",
@@ -191,26 +204,27 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "(EBIT / Capital Employed) * 100",
             "inputs": {"EBIT": ebit, "Capital Employed": capital_employed},
             "benchmark": "> 12%",
-            "status": roce_res.get("status") if "status" in roce_res else (("HEALTHY" if float(roce_res["value"] or 0) >= 12 else "WARNING") if roce_res["is_calculable"] else "NOT_CALCULABLE"),
-            "interpretation": (f"Operating return on capital employed is negative at {float(roce_res['value'] or 0):.1f}%." if float(roce_res["value"] or 0) < 0 else f"Operating return on capital employed stands at {float(roce_res['value'] or 0):.1f}%.") if roce_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": roce_res.get("status") if "status" in roce_res else (("HEALTHY" if (roce_val is not None and roce_val >= 12) else "WARNING") if roce_val is not None else "NOT_CALCULABLE"),
+            "interpretation": (f"Operating return on capital employed is negative at {roce_val:.1f}%." if roce_val < 0 else f"Operating return on capital employed stands at {roce_val:.1f}%.") if roce_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         }
     }
 
     # 3. Solvency & Debt Ratios
-    st_borrowings = curr_liab.get("short_term_borrowings", 0.0) if isinstance(curr_liab, dict) else 0.0
-    if not st_borrowings:
-        st_borrowings = curr_liab.get("short_term_debt", 0.0) if isinstance(curr_liab, dict) else 0.0
-    lt_borrowings = lt_liab_dict.get("long_term_borrowings", 0.0) if isinstance(lt_liab_dict, dict) else 0.0
-    if not lt_borrowings:
-        lt_borrowings = lt_liab_dict.get("long_term_debt", 0.0) if isinstance(lt_liab_dict, dict) else 0.0
+    st_borrowings = (curr_liab.get("short_term_borrowings") or curr_liab.get("short_term_debt") or 0.0) if isinstance(curr_liab, dict) else 0.0
+    lt_borrowings = (lt_liab_dict.get("long_term_borrowings") or lt_liab_dict.get("long_term_debt") or 0.0) if isinstance(lt_liab_dict, dict) else 0.0
         
-    total_borrowings = st_borrowings + lt_borrowings
+    total_borrowings = float(st_borrowings) + float(lt_borrowings)
     debt_for_de = total_borrowings if total_borrowings > 0 else total_liab
 
     de_res = safe_ratio(debt_for_de, equity) if (bs_valid and equity) else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
     dr_res = safe_ratio(total_liab, total_assets, multiply_100=True) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
     eq_r_res = safe_ratio(equity, total_assets, multiply_100=True) if (bs_valid and equity) else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
     ic_res = safe_ratio(ebit, interest) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
+
+    de_val: Optional[float] = float(de_res["value"]) if (de_res["is_calculable"] and de_res["value"] is not None) else None
+    dr_val: Optional[float] = float(dr_res["value"]) if (dr_res["is_calculable"] and dr_res["value"] is not None) else None
+    eq_r_val: Optional[float] = float(eq_r_res["value"]) if (eq_r_res["is_calculable"] and eq_r_res["value"] is not None) else None
+    ic_val: Optional[float] = float(ic_res["value"]) if (ic_res["is_calculable"] and ic_res["value"] is not None) else None
 
     solvency = {
         "debt_to_equity": {
@@ -221,8 +235,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "Total Liabilities / Shareholders' Equity",
             "inputs": {"Total Liabilities": total_liab, "Equity": equity},
             "benchmark": "< 1.5",
-            "status": ("HEALTHY" if de_res["value"] <= 1.5 else ("WARNING" if de_res["value"] <= 2.5 else "CRITICAL")) if de_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": f"For every $1 of equity, the firm carries ${de_res['value']:.2f} of total debt." if de_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if de_val <= 1.5 else ("WARNING" if de_val <= 2.5 else "CRITICAL")) if de_val is not None else "NOT_CALCULABLE",
+            "interpretation": f"For every $1 of equity, the firm carries ${de_val:.2f} of total debt." if de_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         },
         "debt_ratio": {
             "name": "Debt Ratio",
@@ -232,8 +246,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "Total Liabilities / Total Assets",
             "inputs": {"Total Liabilities": total_liab, "Total Assets": total_assets},
             "benchmark": "< 0.6",
-            "status": ("HEALTHY" if dr_res["value"] <= 0.6 else "WARNING") if dr_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": f"Liabilities finance {dr_res['value'] * 100:.1f}% of total assets." if dr_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if dr_val <= 0.6 else "WARNING") if dr_val is not None else "NOT_CALCULABLE",
+            "interpretation": f"Liabilities finance {dr_val * 100:.1f}% of total assets." if dr_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         },
         "equity_ratio": {
             "name": "Equity Ratio",
@@ -243,8 +257,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "Shareholders' Equity / Total Assets",
             "inputs": {"Equity": equity, "Total Assets": total_assets},
             "benchmark": "> 0.4",
-            "status": ("HEALTHY" if eq_r_res["value"] >= 0.4 else "WARNING") if eq_r_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": f"Shareholder equity funds {eq_r_res['value'] * 100:.1f}% of asset base." if eq_r_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if eq_r_val >= 0.4 else "WARNING") if eq_r_val is not None else "NOT_CALCULABLE",
+            "interpretation": f"Shareholder equity funds {eq_r_val * 100:.1f}% of asset base." if eq_r_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         },
         "interest_coverage_ratio": {
             "name": "Interest Coverage Ratio",
@@ -254,8 +268,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "EBIT / Interest Expense",
             "inputs": {"EBIT": ebit, "Interest Expense": interest},
             "benchmark": "> 3.0",
-            "status": ("HEALTHY" if ic_res["value"] >= 3.0 else ("WARNING" if ic_res["value"] >= 1.5 else "CRITICAL")) if ic_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": f"Operating earnings cover annual interest expense {ic_res['value']:.1f} times." if ic_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if ic_val >= 3.0 else ("WARNING" if ic_val >= 1.5 else "CRITICAL")) if ic_val is not None else "NOT_CALCULABLE",
+            "interpretation": f"Operating earnings cover annual interest expense {ic_val:.1f} times." if ic_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         }
     }
 
@@ -263,6 +277,10 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     inv_t_res = safe_ratio(cogs, inv)
     rec_t_res = safe_ratio(rev, rec)
     asset_t_res = safe_ratio(rev, total_assets)
+
+    inv_t_val: Optional[float] = float(inv_t_res["value"]) if (inv_t_res["is_calculable"] and inv_t_res["value"] is not None) else None
+    rec_t_val: Optional[float] = float(rec_t_res["value"]) if (rec_t_res["is_calculable"] and rec_t_res["value"] is not None) else None
+    asset_t_val: Optional[float] = float(asset_t_res["value"]) if (asset_t_res["is_calculable"] and asset_t_res["value"] is not None) else None
 
     efficiency = {
         "inventory_turnover": {
@@ -273,8 +291,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "COGS / Average Inventory",
             "inputs": {"COGS": cogs, "Inventory": inv},
             "benchmark": "4.0 - 8.0x",
-            "status": ("HEALTHY" if inv_t_res["value"] >= 4.0 else "WARNING") if inv_t_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": f"Inventory is restocked and sold {inv_t_res['value']:.1f} times per year." if inv_t_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if inv_t_val >= 4.0 else "WARNING") if inv_t_val is not None else "NOT_CALCULABLE",
+            "interpretation": f"Inventory is restocked and sold {inv_t_val:.1f} times per year." if inv_t_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         },
         "receivable_turnover": {
             "name": "Receivables Turnover",
@@ -284,8 +302,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "Revenue / Accounts Receivable",
             "inputs": {"Revenue": rev, "Accounts Receivable": rec},
             "benchmark": "> 6.0x",
-            "status": ("HEALTHY" if rec_t_res["value"] >= 6.0 else "WARNING") if rec_t_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": f"Accounts receivable are collected {rec_t_res['value']:.1f} times annually." if rec_t_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if rec_t_val >= 6.0 else "WARNING") if rec_t_val is not None else "NOT_CALCULABLE",
+            "interpretation": f"Accounts receivable are collected {rec_t_val:.1f} times annually." if rec_t_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         },
         "asset_turnover": {
             "name": "Asset Turnover",
@@ -295,8 +313,8 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "formula": "Revenue / Total Assets",
             "inputs": {"Revenue": rev, "Total Assets": total_assets},
             "benchmark": "> 1.0x",
-            "status": ("HEALTHY" if asset_t_res["value"] >= 1.0 else "WARNING") if asset_t_res["is_calculable"] else "NOT_CALCULABLE",
-            "interpretation": f"Generates ${asset_t_res['value']:.2f} of annual revenue per dollar of asset deployment." if asset_t_res["is_calculable"] else "Ratio Not Calculable — Required Source Data Missing"
+            "status": ("HEALTHY" if asset_t_val >= 1.0 else "WARNING") if asset_t_val is not None else "NOT_CALCULABLE",
+            "interpretation": f"Generates ${asset_t_val:.2f} of annual revenue per dollar of asset deployment." if asset_t_val is not None else "Ratio Not Calculable — Required Source Data Missing"
         }
     }
 

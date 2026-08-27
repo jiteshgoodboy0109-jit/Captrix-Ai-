@@ -266,10 +266,10 @@ def classify_account(name: str, sheet_context: str = "") -> str:
     equity_keywords = [
         "common stock", "share capital", "equity share capital", "shareholders equity",
         "shareholders' equity", "shareholder equity", "shareholders’ equity",
-        "retained earnings", "reserves", "reserve", "surplus", "owner's equity", "owners equity", "capital stock"
+        "retained earnings", "reserves", "reserve", "surplus", "owner's equity", "owners equity", "capital stock", "treasury stock", "treasury shares"
     ]
     if any(kw in name_lower for kw in equity_keywords) or (("equity" in name_lower or "capital" in name_lower) and "capital work" not in name_lower and "working capital" not in name_lower and "cost of capital" not in name_lower):
-        if "shares" not in name_lower or "share capital" in name_lower or "equity share capital" in name_lower:
+        if "shares" not in name_lower or "share capital" in name_lower or "equity share capital" in name_lower or "treasury shares" in name_lower:
             return "EQUITY"
     if "capital work" in name_lower or "work in progress" in name_lower or "cwip" in name_lower:
         return "ASSET"
@@ -281,7 +281,7 @@ def classify_account(name: str, sheet_context: str = "") -> str:
     # 2. CHECK INVENTORY (ONLY AFTER EQUITY CHECK)
     if "change in inventory" in name_lower or "changes in inventory" in name_lower or "inventory change" in name_lower:
         return "COGS"
-    if "inventory" in name_lower or ("stock" in name_lower and not any(eq_term in name_lower for eq_term in ["common stock", "capital stock", "preferred stock", "stock capital", "equity stock"])):
+    if "inventory" in name_lower or ("stock" in name_lower and not any(eq_term in name_lower for eq_term in ["common stock", "capital stock", "preferred stock", "stock capital", "equity stock", "treasury stock", "treasury shares"])):
         return "INVENTORY_ASSET"
 
     if "payable" in name_lower or "creditor" in name_lower:

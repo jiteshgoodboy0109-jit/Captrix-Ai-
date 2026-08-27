@@ -16,7 +16,7 @@ class PeriodResolver:
     """
     @staticmethod
     def resolve_period(raw_header: str) -> Dict[str, Any]:
-        raw = str(raw_header or "").strip()
+        raw = (raw_header or "").strip()
         if not raw:
             return {
                 "period_id": "UNKNOWN",
@@ -112,7 +112,8 @@ class FinancialConceptResolver:
         "SHORT_TERM_DEBT": ["short-term borrowings", "short term debt", "bank overdraft", "current borrowings"],
         "LONG_TERM_DEBT": ["long-term borrowings", "long term debt", "non-current borrowings", "term loans"],
         "SHARE_CAPITAL": ["share capital", "common stock", "equity share capital", "paid up capital", "capital stock"],
-        "RETAINED_EARNINGS_RESERVES": ["reserves & retained earnings", "reserves and surplus", "retained earnings", "other equity", "reserves"]
+        "RETAINED_EARNINGS_RESERVES": ["reserves & retained earnings", "reserves and surplus", "retained earnings", "other equity", "reserves"],
+        "TREASURY_STOCK": ["treasury stock", "treasury shares", "less: treasury stock"]
     }
 
     @classmethod
@@ -121,6 +122,8 @@ class FinancialConceptResolver:
         sec = section_context.strip().upper()
         hdr = parent_header.strip().upper()
 
+        if "treasury stock" in lbl or "treasury shares" in lbl:
+            return "TREASURY_STOCK"
         if "common stock" in lbl or "capital stock" in lbl or ("stock" in lbl and ("equity" in sec or "equity" in hdr)):
             return "SHARE_CAPITAL"
         if "stock investment" in lbl or ("stock" in lbl and "investment" in sec):

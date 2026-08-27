@@ -28,8 +28,8 @@ def calculate_risk_intelligence(statements: Dict[str, Any], ratios: Dict[str, An
     eq_dict = bs.get("equity", {})
     equity = float((eq_dict.get("total_equity") if isinstance(eq_dict, dict) else eq_dict) or 0.0)
     
-    if isinstance(eq_dict, dict) and "retained_earnings" in eq_dict and eq_dict["retained_earnings"] != 0.0:
-        retained_earnings = float(eq_dict["retained_earnings"])
+    if isinstance(eq_dict, dict) and eq_dict.get("retained_earnings") is not None and eq_dict.get("retained_earnings") != 0.0:
+        retained_earnings = float(eq_dict["retained_earnings"] or 0.0)
     else:
         retained_earnings = net_inc if net_inc != 0.0 else (equity * 0.3 if equity > 0 else 0.0)
 
