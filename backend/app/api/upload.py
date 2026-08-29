@@ -34,6 +34,7 @@ def extract_company_name(filename: str, user_provided_name: str) -> str:
 
 from typing import Optional
 
+@router.post("")
 @router.post("/")
 async def upload_financial_file(
     file: UploadFile = File(...),
@@ -61,12 +62,13 @@ async def upload_financial_file(
         parsed = parse_workbook(file_bytes, filename)
         sheet_names = parsed.get("sheet_names", [])
         items = parsed.get("normalized_items", [])
+        detected_currency = parsed.get("currency", "USD") or "USD"
 
         if not items:
             raise HTTPException(status_code=400, detail="Could not extract valid financial data lines from document.")
 
-        # 2. Company record
-        company = Company(name=final_company_name, industry="Enterprise Accounting", currency="USD")
+        # 2. Company record with exact detected currency
+        company = Company(name=final_company_name, industry="Enterprise Accounting", currency=detected_currency)
         db.add(company)
         db.commit()
         db.refresh(company)

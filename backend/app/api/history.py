@@ -7,6 +7,7 @@ from app.auth.jwt import get_current_user
 
 router = APIRouter(prefix="/api/history", tags=["History Module"])
 
+@router.get("")
 @router.get("/")
 def get_history_list(
     search: Optional[str] = Query(None),

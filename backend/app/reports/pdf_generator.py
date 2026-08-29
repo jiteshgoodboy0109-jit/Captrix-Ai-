@@ -6,19 +6,29 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from typing import Dict, Any
 
-def fmt(val: Any) -> str:
+def fmt(val: Any, currency_symbol: str = "$") -> str:
     if val is None:
-        return "$0"
+        return "—"
     try:
         n = float(val)
         is_neg = n < 0
         abs_n = abs(n)
         formatted = f"{abs_n:,.0f}"
-        return f"({formatted})" if is_neg else f"{formatted}"
+        return f"({currency_symbol}{formatted})" if is_neg else f"{currency_symbol}{formatted}"
     except (ValueError, TypeError):
         return str(val)
 
-def generate_pdf_report(company_name: str, statements: Dict[str, Any], ratios: Dict[str, Any], corp_fin: Dict[str, Any], ai_reports: Dict[str, Any]) -> bytes:
+def generate_pdf_report(
+    company_name: str, 
+    statements: Dict[str, Any], 
+    ratios: Dict[str, Any], 
+    corp_fin: Dict[str, Any], 
+    ai_reports: Dict[str, Any],
+    currency: str = "USD"
+) -> bytes:
+    from app.engine.currency_engine import SUPPORTED_CURRENCIES
+    curr_info = SUPPORTED_CURRENCIES.get(currency.upper(), {"symbol": "$"})
+    sym = curr_info.get("symbol", "$")
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,

@@ -37,7 +37,11 @@ def clean_value_or_none(val: Any) -> Optional[float]:
         if math.isnan(v) or math.isinf(v):
             return None
         return v
-    s = str(val).replace("$", "").replace("₹", "").replace("€", "").replace("£", "").replace(",", "").strip()
+    s = str(val).strip()
+    # Strip any international currency symbols and ISO currency text codes
+    s = re.sub(r'[$\u20b9\u20ac\u00a3\u00a5\u20a9\u20aa\u20ab\u20ac\u20ad\u20ae\u20af\u20b0\u20b1\u20b2\u20b3\u20b4\u20b5\u20b6\u20b7\u20b8\u20b9\u20ba\u20bb\u20bc\u20bd\u20be]', '', s)
+    s = re.sub(r'\b(USD|INR|EUR|GBP|JPY|CAD|AUD|CHF|BRL|SGD|AED|SAR|ZAR|SEK|NOK|DKK|HKD|NZD|MXN|RS|RS\.|R\$|C\$|A\$|S\$|KR)\b', '', s, flags=re.IGNORECASE)
+    s = s.replace(",", "").strip()
     if s.startswith("(") and s.endswith(")"):
         s = "-" + s[1:-1]
     try:
@@ -90,20 +94,33 @@ def is_summary_or_total_row(name: str) -> bool:
     return False
 
 def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: str) -> Dict[str, Any]:
-    """Inspect top 15 rows and columns of all sheets to detect exact Company Name, Currency, and Unit Scale."""
+    """Inspect filename, sheet names, top rows and columns to detect exact Company Name, Currency, and Unit Scale."""
     detected_company = ""
     detected_currency = "USD"
     detected_unit = "Units"
 
     company_candidates = []
     
-    # Currency symbols & patterns
+    # 1. Check filename and sheet names first
+    fn_curr, _ = identify_currency(filename, default_iso="USD")
+    if fn_curr != "USD":
+        detected_currency = fn_curr
+
+    for s_name in sheet_data.keys():
+        s_curr, _ = identify_currency(str(s_name), default_iso="USD")
+        if s_curr != "USD":
+            detected_currency = s_curr
+            break
+
+    # Comprehensive currency token mapping
     currency_map = {
-        "₹": "INR", "inr": "INR", "rupees": "INR", "rs": "INR", "rs.": "INR",
-        "$": "USD", "usd": "USD", "dollar": "USD",
-        "€": "EUR", "eur": "EUR", "euro": "EUR",
-        "£": "GBP", "gbp": "GBP", "pound": "GBP",
-        "cad": "CAD", "aud": "AUD", "jpy": "JPY"
+        "₹": "INR", "inr": "INR", "rupees": "INR", "rupee": "INR", "rs.": "INR", "rs": "INR", "in rs": "INR", "in ₹": "INR", "in inr": "INR",
+        "$": "USD", "usd": "USD", "dollar": "USD", "dollars": "USD",
+        "€": "EUR", "eur": "EUR", "euro": "EUR", "euros": "EUR", "in eur": "EUR",
+        "£": "GBP", "gbp": "GBP", "pound": "GBP", "pounds": "GBP", "in gbp": "GBP",
+        "aed": "AED", "dirham": "AED", "dirhams": "AED",
+        "¥": "JPY", "jpy": "JPY", "yen": "JPY", "cny": "CNY", "rmb": "CNY", "yuan": "CNY",
+        "cad": "CAD", "aud": "AUD", "sgd": "SGD", "chf": "CHF"
     }
     
     unit_map = [
@@ -124,12 +141,19 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
             col_lower = col_str.lower()
             
             iso_found, _ = identify_currency(col_str, filename)
-            if iso_found != "USD" or detected_currency == "USD":
+            if iso_found != "USD":
                 detected_currency = iso_found
             
+            for kw, curr in currency_map.items():
+                if kw in col_lower:
+                    detected_currency = curr
+                    break
+
             for kw, u in unit_map:
                 if kw in col_lower:
                     detected_unit = u
+                    if "₹" in u and detected_currency == "USD":
+                        detected_currency = "INR"
                     break
                     
             m_label = re.search(r'(?:company|entity|corporate|organization)\s*(?:name)?\s*[:\-]\s*([A-Za-z0-9\s.,]+)', col_str, re.IGNORECASE)
@@ -143,8 +167,8 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
                 if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss"]):
                     company_candidates.append(cleaned)
         
-        # Scan top 15 rows
-        top_slice = df.iloc[:15]
+        # Scan top 30 rows
+        top_slice = df.iloc[:30]
         for _, row in top_slice.iterrows():
             for cell in row.values:
                 if pd.isna(cell):
@@ -154,13 +178,16 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
                 
                 # Check currency
                 for kw, curr in currency_map.items():
-                    if kw in cell_lower and detected_currency == "USD":
+                    if kw in cell_lower:
                         detected_currency = curr
+                        break
                         
                 # Check unit scale
                 for kw, u in unit_map:
                     if kw in cell_lower:
                         detected_unit = u
+                        if "₹" in u and detected_currency == "USD":
+                            detected_currency = "INR"
                         break
                         
                 # Check Company Name candidates
@@ -342,6 +369,7 @@ def detect_year_columns(headers: List[Any], top_rows: List[List[Any]]) -> Dict[i
                 continue
             raw_cell_str = str(cell).strip()
             
+            m_iso_date = re.search(r'\b(201[5-9]|202[0-9]|2030)[-/](?:0[1-9]|1[0-2])[-/](?:[0-3][0-9])\b', raw_cell_str)
             m_q = re.search(r'\b(Q[1-4])\b', raw_cell_str, re.IGNORECASE)
             m_fy = re.search(r'\bFY\s*([0-9]{2,4})\b', raw_cell_str, re.IGNORECASE)
             m_yr_range = re.search(r'\b(20[0-9]{2})[-/]([0-9]{2,4})\b', raw_cell_str)
@@ -351,10 +379,12 @@ def detect_year_columns(headers: List[Any], top_rows: List[List[Any]]) -> Dict[i
             q_str = m_q.group(1).upper() if m_q else None
             
             yr_str = None
-            if m_fy:
+            if m_iso_date:
+                yr_str = m_iso_date.group(1)
+            elif m_fy:
                 fy_val = m_fy.group(1)
                 yr_str = f"20{fy_val}" if len(fy_val) == 2 else fy_val
-            elif m_yr_range:
+            elif m_yr_range and not re.search(r'[-/]\d{1,2}[-/]', raw_cell_str):
                 end_y = m_yr_range.group(2)
                 yr_str = f"20{end_y}" if len(end_y) == 2 else end_y
             elif m_year:
@@ -384,6 +414,7 @@ def detect_year_columns(headers: List[Any], top_rows: List[List[Any]]) -> Dict[i
                 continue
             raw_cell_str = str(cell).strip()
             
+            m_iso_date = re.search(r'\b(201[5-9]|202[0-9]|2030)[-/](?:0[1-9]|1[0-2])[-/](?:[0-3][0-9])\b', raw_cell_str)
             m_q = re.search(r'\b(Q[1-4])\b', raw_cell_str, re.IGNORECASE)
             m_fy = re.search(r'\bFY\s*([0-9]{2,4})\b', raw_cell_str, re.IGNORECASE)
             m_yr_range = re.search(r'\b(20[0-9]{2})[-/]([0-9]{2,4})\b', raw_cell_str)
@@ -393,10 +424,12 @@ def detect_year_columns(headers: List[Any], top_rows: List[List[Any]]) -> Dict[i
             q_str = m_q.group(1).upper() if m_q else None
             
             yr_str = None
-            if m_fy:
+            if m_iso_date:
+                yr_str = m_iso_date.group(1)
+            elif m_fy:
                 fy_val = m_fy.group(1)
                 yr_str = f"20{fy_val}" if len(fy_val) == 2 else fy_val
-            elif m_yr_range:
+            elif m_yr_range and not re.search(r'[-/]\d{1,2}[-/]', raw_cell_str):
                 end_y = m_yr_range.group(2)
                 yr_str = f"20{end_y}" if len(end_y) == 2 else end_y
             elif m_year:
@@ -569,7 +602,14 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     fname = (filename or "").lower()
     meta_info = {"company_name": "Enterprise Entity", "currency": "USD", "unit": "Units"}
 
-    if fname.endswith(".csv") or fname.endswith(".tsv"):
+    from app.engine.accounting_adapters import TallyAdapter, QuickBooksAdapter, XeroAdapter
+
+    if TallyAdapter.is_tally_format(file_bytes, filename):
+        tally_sheets = TallyAdapter.parse_tally_xml(file_bytes)
+        if tally_sheets:
+            sheet_data = tally_sheets
+            detected_sheets = list(sheet_data.keys())
+    elif fname.endswith(".csv") or fname.endswith(".tsv"):
         adapter = CSVAdapter()
         sheet_data = adapter.extract_sheets(file_bytes, filename)
         detected_sheets = list(sheet_data.keys())
@@ -583,8 +623,12 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         detected_sheets = list(sheet_data.keys())
 
     try:
-        if fname.endswith(".csv") or fname.endswith(".tsv"):
+        if (fname.endswith(".csv") or fname.endswith(".tsv")) and not sheet_data:
             df = pd.read_csv(io.BytesIO(file_bytes), sep=None, engine='python')
+            if QuickBooksAdapter.is_quickbooks_format(file_bytes, filename):
+                df = QuickBooksAdapter.parse_quickbooks_csv(df)
+            elif XeroAdapter.is_xero_format(file_bytes, filename):
+                df = XeroAdapter.parse_xero_csv(df)
             sheet_data["Sheet1"] = df
             detected_sheets = ["Sheet1"]
         elif fname.endswith(".json"):

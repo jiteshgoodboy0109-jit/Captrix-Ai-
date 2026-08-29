@@ -15,12 +15,15 @@ import {
   Sparkles
 } from 'lucide-react';
 
+import { formatCurrency, getCurrencySymbol } from '@/lib/currency';
+
 interface AuditorWorkingPapersProps {
   auditReport: any;
   companyName?: string;
+  currency?: string;
 }
 
-export default function AuditorWorkingPapers({ auditReport, companyName = "Enterprise Target" }: AuditorWorkingPapersProps) {
+export default function AuditorWorkingPapers({ auditReport, companyName = "Enterprise Target", currency = "USD" }: AuditorWorkingPapersProps) {
   if (!auditReport) return null;
 
   const { auditor_opinion, benford_analysis, sloan_accruals, round_number_audit, working_papers } = auditReport;
@@ -183,7 +186,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
             </div>
             <div className="text-right">
               <p className="text-xs text-slate-500 font-medium">Accruals Amount</p>
-              <p className="text-sm font-extrabold text-slate-800">${sloan_accruals?.accruals_amount?.toLocaleString() ?? 0}</p>
+              <p className="text-sm font-extrabold text-slate-800">{formatCurrency(sloan_accruals?.accruals_amount, currency)}</p>
             </div>
           </div>
 

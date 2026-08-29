@@ -1,15 +1,18 @@
 'use client';
 import React from 'react';
 import { BarChart3, PieChart } from 'lucide-react';
+import { formatCurrency, getCurrencySymbol } from '@/lib/currency';
 
 interface FinancialChartsProps {
   statements: any;
   ratios: any;
+  currency?: string;
 }
 
-export default function FinancialCharts({ statements, ratios }: FinancialChartsProps) {
+export default function FinancialCharts({ statements, ratios, currency = 'USD' }: FinancialChartsProps) {
   if (!statements) return null;
 
+  const symbol = getCurrencySymbol(currency);
   const inc = statements.income_statement || {};
   const bs = statements.balance_sheet || {};
 
@@ -29,7 +32,7 @@ export default function FinancialCharts({ statements, ratios }: FinancialChartsP
         <div className="flex items-center justify-between border-b pb-3 border-slate-100">
           <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-brand-600" />
-            Revenue & Margin Breakdown
+            Revenue & Margin Breakdown ({currency})
           </h4>
           <span className="text-[10px] font-bold text-slate-400">INCOME METRICS</span>
         </div>
@@ -38,7 +41,7 @@ export default function FinancialCharts({ statements, ratios }: FinancialChartsP
           <div>
             <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
               <span>Gross Revenue</span>
-              <span>${(rev / 1000).toFixed(0)}k (100%)</span>
+              <span>{formatCurrency(rev, currency)}</span>
             </div>
             <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
               <div className="h-full bg-brand-600 rounded-full w-full"></div>

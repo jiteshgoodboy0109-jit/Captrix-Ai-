@@ -1,10 +1,25 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  cleanDistDir: true,
-  webpack: (config, { dev }) => {
-    if (dev) {
-      config.cache = false;
+  transpilePackages: [
+    'firebase',
+    '@firebase/app',
+    '@firebase/auth',
+    '@firebase/firestore',
+    '@firebase/analytics',
+    '@firebase/component',
+    '@firebase/util',
+    '@firebase/logger',
+    '@firebase/webchannel-wrapper'
+  ],
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      };
     }
     return config;
   },
@@ -19,3 +34,4 @@ const nextConfig = {
 }
 
 module.exports = nextConfig
+

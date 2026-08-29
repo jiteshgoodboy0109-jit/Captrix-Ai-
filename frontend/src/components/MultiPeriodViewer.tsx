@@ -13,11 +13,14 @@ import {
   Layers
 } from 'lucide-react';
 
+import { formatCurrency, getCurrencySymbol } from '@/lib/currency';
+
 interface MultiPeriodViewerProps {
   multiPeriod: any;
+  currency?: string;
 }
 
-export default function MultiPeriodViewer({ multiPeriod }: MultiPeriodViewerProps) {
+export default function MultiPeriodViewer({ multiPeriod, currency = 'USD' }: MultiPeriodViewerProps) {
   const [activeTab, setActiveTab] = useState<'income' | 'balance'>('income');
 
   if (!multiPeriod) return null;
@@ -28,10 +31,7 @@ export default function MultiPeriodViewer({ multiPeriod }: MultiPeriodViewerProp
   const bsComp = multiPeriod.comparative_balance_sheet || [];
   const marginTrends = multiPeriod.margin_trends || [];
 
-  const formatDollar = (val: number | null | undefined) => {
-    if (val === null || val === undefined) return 'N/A';
-    return `$${val.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
-  };
+  const formatDollar = (val: number | null | undefined) => formatCurrency(val, currency);
 
   const getGrowthBadge = (val: number | null | undefined) => {
     if (val === null || val === undefined) return <span className="text-xs font-medium text-slate-400">N/A</span>;
@@ -205,6 +205,12 @@ export default function MultiPeriodViewer({ multiPeriod }: MultiPeriodViewerProp
                 </div>
                 <div className="flex items-center gap-3 text-right">
                   <div>
+                    <p className="text-[10px] font-bold text-slate-400">Current Ratio (CRT)</p>
+                    <p className="text-xs font-extrabold text-cyan-700">
+                      {m.crt !== null && m.crt !== undefined ? m.crt : (m.current_ratio !== null && m.current_ratio !== undefined ? m.current_ratio : 'N/A')}
+                    </p>
+                  </div>
+                  <div>
                     <p className="text-[10px] font-bold text-slate-400">Net Profit Margin</p>
                     <p className="text-xs font-extrabold text-emerald-700">{m.net_margin}%</p>
                   </div>
@@ -244,9 +250,15 @@ export default function MultiPeriodViewer({ multiPeriod }: MultiPeriodViewerProp
               {(activeTab === 'income' ? incComp : bsComp).map((row: any, i: number) => (
                 <tr key={i} className="hover:bg-slate-50/80 transition-colors">
                   <td className="py-3.5 px-4 font-bold text-slate-900">{row.metric}</td>
-                  <td className="py-3.5 px-4 text-right font-mono text-slate-600">{formatDollar(row.fy2023)}</td>
-                  <td className="py-3.5 px-4 text-right font-mono text-slate-600">{formatDollar(row.fy2024)}</td>
-                  <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">{formatDollar(row.fy2025)}</td>
+                  <td className="py-3.5 px-4 text-right font-mono text-slate-600">
+                    {row.metric.includes('Current Ratio') ? (row.fy2023 !== null && row.fy2023 !== undefined ? row.fy2023 : 'N/A') : formatDollar(row.fy2023)}
+                  </td>
+                  <td className="py-3.5 px-4 text-right font-mono text-slate-600">
+                    {row.metric.includes('Current Ratio') ? (row.fy2024 !== null && row.fy2024 !== undefined ? row.fy2024 : 'N/A') : formatDollar(row.fy2024)}
+                  </td>
+                  <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
+                    {row.metric.includes('Current Ratio') ? (row.fy2025 !== null && row.fy2025 !== undefined ? row.fy2025 : 'N/A') : formatDollar(row.fy2025)}
+                  </td>
                   <td className="py-3.5 px-4 text-center">{getGrowthBadge(row.yoy_24_25)}</td>
                   <td className="py-3.5 px-4 text-center font-bold text-brand-700 bg-brand-50/30">
                     {row.cagr_3yr}%
@@ -303,6 +315,12 @@ export default function MultiPeriodViewer({ multiPeriod }: MultiPeriodViewerProp
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-500 font-medium">Projected Total Assets:</span>
                     <span className="font-bold text-slate-700">{formatDollar(proj.projected_assets)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs border-t border-slate-100 pt-1">
+                    <span className="text-slate-500 font-medium">Projected Current Ratio (CRT):</span>
+                    <span className="font-extrabold text-cyan-700">
+                      {proj.projected_current_ratio !== null && proj.projected_current_ratio !== undefined ? proj.projected_current_ratio : (proj.crt !== null && proj.crt !== undefined ? proj.crt : 'N/A')}
+                    </span>
                   </div>
                 </div>
               </div>

@@ -147,9 +147,9 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     rec_items = [i for i in assets if "RECEIVABLE" in str(i.get("account_type")) or "receivable" in str(i.get("account_name")).lower() or "debtor" in str(i.get("account_name")).lower()]
     inv_items = [i for i in assets if "INVENTORY" in str(i.get("account_type")) or "inventory" in str(i.get("account_name")).lower() or "stock" in str(i.get("account_name")).lower()]
     
-    cash_and_equivalents = sum(abs(i.get("net_amount", 0.0)) for i in cash_items)
-    accounts_receivable = sum(abs(i.get("net_amount", 0.0)) for i in rec_items)
-    inventory = sum(abs(i.get("net_amount", 0.0)) for i in inv_items)
+    cash_and_equivalents = sum(abs(i.get("net_amount", 0.0)) for i in cash_items) if cash_items else None
+    accounts_receivable = sum(abs(i.get("net_amount", 0.0)) for i in rec_items) if rec_items else None
+    inventory = sum(abs(i.get("net_amount", 0.0)) for i in inv_items) if inv_items else None
     
     # Detailed current assets
     petty_cash_items = [i for i in assets if "petty cash" in str(i.get("account_name")).lower()]
@@ -170,8 +170,8 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         and i not in cash_items + rec_items + inv_items
     ]
     calc_ca = (cash_and_equivalents or 0.0) + (accounts_receivable or 0.0) + (inventory or 0.0)
-    total_current_assets = sum(abs(i.get("net_amount", 0.0)) for i in current_asset_items) if current_asset_items else calc_ca
-    other_ca = max(0.0, total_current_assets - calc_ca) if total_current_assets > calc_ca else None
+    total_current_assets = sum(abs(i.get("net_amount", 0.0)) for i in current_asset_items) if current_asset_items else (calc_ca if (cash_items or rec_items or inv_items) else None)
+    other_ca = max(0.0, total_current_assets - calc_ca) if (total_current_assets is not None and total_current_assets > calc_ca) else None
 
     # Non-current Assets details
     inv_nca_items = [i for i in assets if "investment" in str(i.get("account_name")).lower() and i not in current_asset_items]
@@ -238,10 +238,11 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         elif "other asset" in nm or "other non-current" in nm:
             already_classified_nca.add(id(i))
             
-    other_non_current_assets = (other_assets - total_current_assets) if (other_assets is not None and other_assets >= total_current_assets) else (other_assets or 0.0)
+    other_non_current_assets = (other_assets - (total_current_assets or 0.0)) if (other_assets is not None and total_current_assets is not None and other_assets >= total_current_assets) else (other_assets or 0.0)
     unclassified_nca = sum(abs(i.get("net_amount", 0.0)) for i in assets if id(i) not in already_classified_nca and i not in current_asset_items)
     
-    total_non_current_assets = (investment or 0.0) + (net_ppe or 0.0) + (total_intangibles or 0.0) + (other_non_current_assets or 0.0) + unclassified_nca
+    has_nca = bool(inv_nca_items or net_ppe is not None or total_intangibles is not None or other_assets_items or unclassified_nca > 0)
+    total_non_current_assets = ((investment or 0.0) + (net_ppe or 0.0) + (total_intangibles or 0.0) + (other_non_current_assets or 0.0) + unclassified_nca) if has_nca else None
     
     explicit_total_assets = [
         i for i in latest_items 
@@ -250,10 +251,8 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     ]
     if explicit_total_assets:
         total_assets = abs(explicit_total_assets[-1].get("net_amount", 0.0))
-        if total_non_current_assets == 0:
-            total_non_current_assets = max(0.0, total_assets - total_current_assets)
     else:
-        total_assets = total_current_assets + total_non_current_assets
+        total_assets = ((total_current_assets or 0.0) + (total_non_current_assets or 0.0)) if (total_current_assets is not None or total_non_current_assets is not None) else None
 
     # Liabilities & Equity details (Filtering out section header rows)
     valid_liabilities = [i for i in liabilities if not is_summary_or_total_row(str(i.get("account_name")))]
@@ -277,9 +276,12 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     tax_payable = sum(abs(i.get("net_amount", 0.0)) for i in tax_p_items) if tax_p_items else None
     unearned_revenue = sum(abs(i.get("net_amount", 0.0)) for i in unearned_rev_items) if unearned_rev_items else None
 
-    total_current_liabilities = (trade_payables or 0.0) + (other_current_liabilities or 0.0) + (short_term_borrowings or 0.0) + (notes_payable or 0.0) + (wages_payable or 0.0) + (interest_payable or 0.0) + (tax_payable or 0.0) + (unearned_revenue or 0.0)
-    if total_current_liabilities == 0.0 and valid_liabilities:
-        total_current_liabilities = sum(abs(i.get("net_amount", 0.0)) for i in valid_liabilities if "non-current" not in str(i.get("account_name")).lower() and "long term" not in str(i.get("account_name")).lower())
+    has_cl = bool(payables_items or other_cl_items or short_term_borrowings_items or notes_p_items or wages_p_items or interest_p_items or tax_p_items or unearned_rev_items)
+    total_current_liabilities = ((trade_payables or 0.0) + (other_current_liabilities or 0.0) + (short_term_borrowings or 0.0) + (notes_payable or 0.0) + (wages_payable or 0.0) + (interest_payable or 0.0) + (tax_payable or 0.0) + (unearned_revenue or 0.0)) if has_cl else None
+    if total_current_liabilities is None and valid_liabilities:
+        cl_raw = sum(abs(i.get("net_amount", 0.0)) for i in valid_liabilities if "non-current" not in str(i.get("account_name")).lower() and "long term" not in str(i.get("account_name")).lower())
+        if cl_raw > 0:
+            total_current_liabilities = cl_raw
         
     long_term_borrowings_items = [i for i in valid_liabilities if any(k in str(i.get("account_name")).lower() for k in ["long-term borrowing", "long term borrowing", "long-term borrowings", "long term borrowings", "long term debt", "long-term debt", "non-current debt", "long-term liabilities", "long term liabilities", "non-current liabilities", "non current liabilities", "lt borrowing", "lt borrowings", "lt debt"]) and "other" not in str(i.get("account_name")).lower()]
     other_ncl_items = [i for i in valid_liabilities if any(k in str(i.get("account_name")).lower() for k in ["other non-current liab", "other non current liab", "other non-current liabilities", "other non current liabilities", "other non-current liability", "other non current liability", "other non-current debt", "other non current debt"]) or ("other" in str(i.get("account_name")).lower() and ("non-current" in str(i.get("account_name")).lower() or "non current" in str(i.get("account_name")).lower()) and "asset" not in str(i.get("account_name")).lower())]
@@ -291,20 +293,20 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     notes_payable_lt = sum(abs(i.get("net_amount", 0.0)) for i in notes_p_lt_items) if notes_p_lt_items else None
     bonds_payable = sum(abs(i.get("net_amount", 0.0)) for i in bonds_p_items) if bonds_p_items else None
 
-    total_ltl = (long_term_borrowings or 0.0) + (other_non_current_liabilities or 0.0) + (notes_payable_lt or 0.0) + (bonds_payable or 0.0)
+    has_ltl = bool(long_term_borrowings_items or other_ncl_items or notes_p_lt_items or bonds_p_items)
+    total_ltl = ((long_term_borrowings or 0.0) + (other_non_current_liabilities or 0.0) + (notes_payable_lt or 0.0) + (bonds_payable or 0.0)) if has_ltl else None
     long_term_liabilities = {
         "notes_payable_lt": round(notes_payable_lt, 2) if notes_payable_lt is not None else None,
         "bonds_payable": round(bonds_payable, 2) if bonds_payable is not None else None,
         "long_term_debt": round(long_term_borrowings, 2) if long_term_borrowings is not None else None,
         "long_term_borrowings": round(long_term_borrowings, 2) if long_term_borrowings is not None else None,
         "other_non_current_liabilities": round(other_non_current_liabilities, 2) if other_non_current_liabilities is not None else None,
-        "total_long_term_liabilities": round(total_ltl, 2)
+        "total_long_term_liabilities": round(total_ltl, 2) if total_ltl is not None else None
     }
     
-    total_liabilities = total_current_liabilities + total_ltl
-    if total_liabilities == 0.0 and valid_liabilities:
+    total_liabilities = ((total_current_liabilities or 0.0) + (total_ltl or 0.0)) if (total_current_liabilities is not None or total_ltl is not None) else None
+    if total_liabilities is None and valid_liabilities:
         total_liabilities = sum(abs(i.get("net_amount", 0.0)) for i in valid_liabilities)
-        long_term_liabilities["total_long_term_liabilities"] = round(total_liabilities - total_current_liabilities, 2)
 
     valid_equity = [i for i in equity if not is_summary_or_total_row(str(i.get("account_name")))]
     share_capital_items = [i for i in valid_equity if any(k in str(i.get("account_name")).lower() for k in ["share capital", "common stock", "equity share capital", "paid up capital", "paid-up capital", "capital stock", "preferred stock", "owner's capital", "owners capital"])]
@@ -393,10 +395,10 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         balance_sheet["total_liabilities"] = None
     elif total_equity is not None and total_assets is not None and total_liabilities is not None:
         bs_diff = round(abs(total_assets - (total_liabilities + total_equity)), 2)
-        bs_status = "PASS" if bs_diff <= 1.0 else "FAIL"
+        bs_status = "PASS" if bs_diff <= 1.0 else "UNBALANCED"
     else:
         bs_diff = None
-        bs_status = "FAIL"
+        bs_status = "INCOMPLETE"
 
     # Explicit Trial Balance Check: Trial Balance is APPLICABLE ONLY if source contains explicit trial balance statement or debit & credit columns
     has_explicit_tb = any("trial balance" in str(i.get("sheet")).lower() for i in eval_items) or (

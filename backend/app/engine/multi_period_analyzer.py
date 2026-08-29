@@ -20,28 +20,25 @@ def calculate_yoy(val1: float | None, val2: float | None) -> float:
 def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]:
     """
     Generates 3-Year Comparative Financial Statements, YoY Growth Rates, CAGR %,
-    Margin Evolution, and AI Multi-Period Trajectory Assessment.
+    Margin & Current Ratio Trend (CRT) Evolution, and AI Multi-Period Trajectory & Forecasts.
     """
     by_year = statements.get("by_year", {})
     years_sorted = sorted([y for y in by_year.keys() if y != "Current"])
     
     if not by_year or not years_sorted:
-        # Fallback for single-period or legacy statements payload
         by_year = {"Current": statements}
         years_sorted = ["Current"]
 
-    # Map the sorted years to the slot variables: oldest, middle, latest
     if len(years_sorted) >= 3:
         y1, y2, y3 = years_sorted[-3], years_sorted[-2], years_sorted[-1]
     elif len(years_sorted) == 2:
         y1, y2, y3 = None, years_sorted[0], years_sorted[1]
-    else: # len == 1
+    else:
         y1, y2, y3 = None, None, years_sorted[0]
 
-    # Helper function to get values safely
     def get_yr_values(y: str | None):
         if y is None:
-            return 0.0, None, None, 0.0, 0.0, 0.0
+            return 0.0, None, None, 0.0, 0.0, 0.0, None, None
         stmt = by_year.get(y, {})
         inc = stmt.get("income_statement", {})
         bs = stmt.get("balance_sheet", {})
@@ -55,11 +52,21 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
         eq_dict = bs.get("equity", {})
         eq = (eq_dict.get("total_equity", 0.0) if isinstance(eq_dict, dict) else 0.0) or 0.0
         
-        return rev, cogs, gp, net, assets, eq
+        curr_assets = bs.get("current_assets", {})
+        ca = curr_assets.get("total_current_assets") if isinstance(curr_assets, dict) else None
+        
+        curr_liab = bs.get("current_liabilities", {})
+        cl = curr_liab.get("total_current_liabilities") if isinstance(curr_liab, dict) else None
+        
+        return rev, cogs, gp, net, assets, eq, ca, cl
 
-    rev_y3, cogs_y3, gp_y3, net_y3, assets_y3, equity_y3 = get_yr_values(y3)
-    rev_y2, cogs_y2, gp_y2, net_y2, assets_y2, equity_y2 = get_yr_values(y2)
-    rev_y1, cogs_y1, gp_y1, net_y1, assets_y1, equity_y1 = get_yr_values(y1)
+    rev_y3, cogs_y3, gp_y3, net_y3, assets_y3, equity_y3, ca_y3, cl_y3 = get_yr_values(y3)
+    rev_y2, cogs_y2, gp_y2, net_y2, assets_y2, equity_y2, ca_y2, cl_y2 = get_yr_values(y2)
+    rev_y1, cogs_y1, gp_y1, net_y1, assets_y1, equity_y1, ca_y1, cl_y1 = get_yr_values(y1)
+
+    cr_y3 = round(ca_y3 / cl_y3, 2) if (ca_y3 is not None and cl_y3 is not None and cl_y3 > 0) else None
+    cr_y2 = round(ca_y2 / cl_y2, 2) if (ca_y2 is not None and cl_y2 is not None and cl_y2 > 0) else None
+    cr_y1 = round(ca_y1 / cl_y1, 2) if (ca_y1 is not None and cl_y1 is not None and cl_y1 > 0) else None
 
     # 1. YoY Growth Rates & CAGR
     revenue_growth_24_25 = calculate_yoy(rev_y2, rev_y3) if y2 is not None else 0.0
@@ -75,7 +82,7 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
     gp_cagr = gp_cagr_opt if gp_cagr_opt is not None else 0.0
     assets_cagr = assets_cagr_opt if assets_cagr_opt is not None else 0.0
 
-    # 2. Margin Evolution Trend (%)
+    # 2. Margin & Current Ratio Trend (CRT) (%)
     margin_trends = []
     for y in [y1, y2, y3]:
         if y is None:
@@ -90,6 +97,10 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
         eq_y_dict = bs_y.get("equity", {})
         eq_y = (eq_y_dict.get("total_equity", 0.0) if isinstance(eq_y_dict, dict) else 0.0) or 0.0
         
+        ca_y = bs_y.get("current_assets", {}).get("total_current_assets") if isinstance(bs_y.get("current_assets"), dict) else None
+        cl_y = bs_y.get("current_liabilities", {}).get("total_current_liabilities") if isinstance(bs_y.get("current_liabilities"), dict) else None
+        cr_val = round(ca_y / cl_y, 2) if (ca_y is not None and cl_y is not None and cl_y > 0) else None
+
         gm_y = round((gp_y / rev_y) * 100, 2) if (rev_y > 0 and gp_y is not None) else 0.0
         np_y = round((net_y / rev_y) * 100, 2) if rev_y > 0 else 0.0
         roe_y = round((net_y / eq_y) * 100, 2) if eq_y > 0 else 0.0
@@ -98,7 +109,10 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
             "period": f"FY{y}" if y != "Current" else "Current",
             "gross_margin": gm_y,
             "net_margin": np_y,
-            "roe": roe_y
+            "roe": roe_y,
+            "current_ratio": cr_val,
+            "crt": cr_val,
+            "crt_display": f"{cr_val:.2f}" if cr_val is not None else "NOT_CALCULABLE"
         })
 
     # 3. Comparative Financial Statements Summary Table
@@ -112,9 +126,11 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
     comparative_balance_sheet = [
         {"metric": "Total Assets", "fy2023": assets_y1, "fy2024": assets_y2, "fy2025": assets_y3, "yoy_24_25": calculate_yoy(assets_y2, assets_y3) if y2 is not None else 0.0, "cagr_3yr": assets_cagr},
         {"metric": "Total Shareholders' Equity", "fy2023": equity_y1, "fy2024": equity_y2, "fy2025": equity_y3, "yoy_24_25": calculate_yoy(equity_y2, equity_y3) if y2 is not None else 0.0, "cagr_3yr": calculate_cagr(equity_y1, equity_y3, 2) if (y1 is not None and calculate_cagr(equity_y1, equity_y3, 2) is not None) else 0.0},
+        {"metric": "Current Ratio (CR / CRT)", "fy2023": cr_y1, "fy2024": cr_y2, "fy2025": cr_y3, "yoy_24_25": calculate_yoy(cr_y2, cr_y3) if (y2 is not None and cr_y2 and cr_y3) else 0.0, "cagr_3yr": 0.0},
     ]
 
     # AI Trajectory Commentary
+    cr_y3_str = f"Current Ratio (CRT) of {cr_y3:.2f}" if cr_y3 is not None else "Current Ratio (CRT): Not Calculable"
     if y1 is not None:
         gm_y1 = margin_trends[0]["gross_margin"]
         gm_y3 = margin_trends[2]["gross_margin"]
@@ -122,7 +138,7 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
         ai_trajectory = (
             f"The company demonstrates a 3-year revenue CAGR of {revenue_cagr}% alongside "
             f"a net income CAGR of {net_cagr}%. Gross margin evolved from {gm_y1}% in FY{y1} to {gm_y3}% in FY{y3}, "
-            f"indicating effective cost management. Return on Equity (ROE) expanded to {roe_y3}%, "
+            f"indicating effective cost management. Liquidity profile exhibits a {cr_y3_str}, and Return on Equity (ROE) expanded to {roe_y3}%, "
             f"reflecting compounding equity value for shareholders."
         )
     elif y2 is not None:
@@ -132,24 +148,24 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
         ai_trajectory = (
             f"Comparative multi-period analysis between FY{y2} and FY{y3} shows "
             f"YoY revenue growth of {revenue_growth_24_25}% and YoY net income growth of {net_growth_24_25}%. "
-            f"Gross margin evolved from {gm_y2}% in FY{y2} to {gm_y3}% in FY{y3}, with a Return on Equity (ROE) of {roe_y3}%."
+            f"Gross margin evolved from {gm_y2}% in FY{y2} to {gm_y3}% in FY{y3}, with a {cr_y3_str} and Return on Equity (ROE) of {roe_y3}%."
         )
     else:
         gm_y3 = margin_trends[0]["gross_margin"]
         roe_y3 = margin_trends[0]["roe"]
         ai_trajectory = (
             f"Single-period financial statements parsed for FY{y3}. "
-            f"Gross margin stands at {gm_y3}% and Return on Equity (ROE) is {roe_y3}%. "
+            f"Gross margin stands at {gm_y3}%, {cr_y3_str}, and Return on Equity (ROE) is {roe_y3}%. "
             f"Multi-year comparative history was not available in the source workbook."
         )
 
-    # Backtesting & Forecast Error Validation Metrics
+    # Forecast Calculation
     has_sufficient_history = (y2 is not None) or (y1 is not None)
     
     if not has_sufficient_history:
         forecast_status = "INSUFFICIENT_HISTORICAL_DATA"
         forecast_message = "Insufficient reliable historical data to generate a dependable forecast."
-        forecast_rev_g = 3.0  # Conservative baseline
+        forecast_rev_g = 3.0
         forecast_net_g = 3.0
         forecast_asset_g = 3.0
         mae_metric = None
@@ -159,9 +175,7 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
         forecast_status = "VALIDATED_TIME_SERIES"
         forecast_message = f"3-Year forecast generated using {len(years_sorted)}-period historical trend analysis."
         
-        # Calculate Backtesting Error Metrics (MAE, RMSE, MAPE) on historical holds
         if y1 is not None and y2 is not None:
-            # Backtest FY2025 actual vs prediction from FY2023-FY2024 trend
             actual_rev = rev_y3
             predicted_rev = rev_y2 * (1.0 + (calculate_yoy(rev_y1, rev_y2) / 100.0))
             mae_metric = round(abs(actual_rev - predicted_rev), 2)
@@ -191,9 +205,11 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
         else:
             forecast_asset_g = min(max(forecast_rev_g * 0.8, -10.0), 15.0)
 
-    # Calculate 3-Year Forecast Projections
+    # 3-Year Forecast Projections (Including Projected Current Ratio / CRT)
     projections = []
     net_margin_y3 = (net_y3 / rev_y3) if rev_y3 > 0 else 0.0
+    ca_base = ca_y3 if ca_y3 is not None else 0.0
+    cl_base = cl_y3 if cl_y3 is not None else 0.0
 
     for t, label, conf in [
         (1, "Y+1 (Forecast)", "High Confidence (Base Case)"),
@@ -208,11 +224,19 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
         else:
             proj_net = round(net_y3 * ((1.0 - (forecast_rev_g / 100.0)) if forecast_rev_g > 0 else (1.0 + abs(forecast_rev_g) / 100.0)) ** t, 2)
 
+        proj_ca = round(ca_base * ((1.0 + (forecast_asset_g / 100.0)) ** t), 2) if ca_base > 0 else None
+        proj_cl = round(cl_base * ((1.0 + (forecast_rev_g * 0.7 / 100.0)) ** t), 2) if cl_base > 0 else None
+        
+        proj_cr = round(proj_ca / proj_cl, 2) if (proj_ca is not None and proj_cl is not None and proj_cl > 0) else (cr_y3 if cr_y3 is not None else None)
+
         projections.append({
             "period": label,
             "projected_revenue": proj_rev,
             "projected_net_income": proj_net,
             "projected_assets": proj_assets,
+            "projected_current_ratio": proj_cr,
+            "crt": proj_cr,
+            "crt_display": f"{proj_cr:.2f}" if proj_cr is not None else "NOT_CALCULABLE",
             "confidence_range": conf
         })
 
@@ -221,7 +245,9 @@ def generate_multi_period_analysis(statements: Dict[str, Any]) -> Dict[str, Any]
             "revenue_cagr": revenue_cagr,
             "net_income_cagr": net_cagr,
             "gross_profit_cagr": gp_cagr,
-            "assets_cagr": assets_cagr
+            "assets_cagr": assets_cagr,
+            "current_ratio_latest": cr_y3,
+            "crt_latest": cr_y3
         },
         "yoy_growth": {
             "revenue_yoy": revenue_growth_24_25,

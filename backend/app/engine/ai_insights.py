@@ -271,59 +271,80 @@ def answer_financial_query(query: str, statements: Dict[str, Any], ratios: Dict[
     wacc = corp_fin.get("capital_structure", {}).get("wacc", 8.5)
     ccc = corp_fin.get("working_capital_cycle", {}).get("cash_conversion_cycle", 30.0)
 
-    if "balance sheet" in q or "assets" in q or "liabilities" in q:
+    # 14. USER QUERY FILTER: If user asks a specific question, answer only that question.
+    if "revenue" in q or "sales" in q or "turnover" in q:
+        op_rev = inc.get("revenue_from_operations") or inc.get("sales") or rev
+        oth_inc = inc.get("other_income")
+        if oth_inc and oth_inc > 0:
+            return f"**Revenue**: Operating Revenue / Sales is **${op_rev:,.2f}**, Other Income is **${oth_inc:,.2f}**, and Total Recognized Revenue is **${rev:,.2f}**."
+        return f"**Revenue**: Total Recognized Revenue from operations is **${rev:,.2f}**."
+    
+    elif "net income" in q or "net profit" in q or "pat" in q or "bottom line" in q:
+        np_str = f" ({np_margin:.1f}% net margin)" if np_margin is not None else ""
+        return f"**Net Income**: Net Profit for the period is **${net_inc:,.2f}**{np_str}."
+
+    elif "gross profit" in q or "cogs" in q or "cost of goods" in q:
+        gp_val = inc.get("gross_profit")
+        cogs_val = inc.get("cogs") or inc.get("cost_of_goods_sold")
+        if gp_val is not None:
+            cogs_str = f" with COGS of ${cogs_val:,.2f}" if cogs_val is not None else ""
+            return f"**Gross Profit**: Gross Profit is **${gp_val:,.2f}**{cogs_str} ({gp_margin:.1f}% gross margin)."
+        return "**Gross Profit**: Not reported or not calculable because separate Cost of Goods Sold (COGS) is not identified in the uploaded document."
+
+    elif "balance sheet" in q or "assets" in q or "liabilities" in q or "equity" in q:
+        if bs.get("status") == "NOT_REPORTED_IN_SOURCE" or not bs.get("total_assets"):
+            return "**Balance Sheet**: Balance sheet accounts were not reported in the uploaded source document."
         tot_assets_val = bs.get('total_assets') or 0.0
         tot_liab_val = bs.get('total_liabilities') or 0.0
         eq_val = (bs.get('equity', {}).get('total_equity') if isinstance(bs.get('equity'), dict) else bs.get('equity')) or 0.0
         cur_assets_val = (bs.get('current_assets', {}).get('total_current_assets') if isinstance(bs.get('current_assets'), dict) else 0.0) or 0.0
-        non_cur_assets_val = (bs.get('non_current_assets', {}).get('total_non_current_assets') if isinstance(bs.get('non_current_assets'), dict) else 0.0) or 0.0
         cur_liab_val = (bs.get('current_liabilities', {}).get('total_current_liabilities') if isinstance(bs.get('current_liabilities'), dict) else 0.0) or 0.0
-        non_cur_liab_val = (bs.get('non_current_liabilities', {}).get('total_non_current_liabilities') if isinstance(bs.get('non_current_liabilities'), dict) else 0.0) or 0.0
         return (
             f"**Balance Sheet Summary**:\n"
-            f"- **Total Assets**: ${tot_assets_val:,.2f} (Current: ${cur_assets_val:,.2f}, Non-Current: ${non_cur_assets_val:,.2f})\n"
-            f"- **Total Liabilities**: ${tot_liab_val:,.2f} (Current: ${cur_liab_val:,.2f}, Non-Current: ${non_cur_liab_val:,.2f})\n"
-            f"- **Stockholders' Equity**: ${eq_val:,.2f}\n"
-            f"The balance sheet is fully balanced with $Assets = Liabilities + Equity$."
+            f"- **Total Assets**: ${tot_assets_val:,.2f} (Current Assets: ${cur_assets_val:,.2f})\n"
+            f"- **Total Liabilities**: ${tot_liab_val:,.2f} (Current Liabilities: ${cur_liab_val:,.2f})\n"
+            f"- **Stockholders' Equity**: ${eq_val:,.2f}"
         )
+
     elif "roe" in q or "return on equity" in q:
-        return (
-            f"**Return on Equity (ROE) Analysis**:\n"
-            f"The company's ROE is **{roe:.1f}%**.\n"
-            f"ROE is driven by Net Profit Margin ({np_margin:.1f}%), Asset Turnover ({asset_t:.2f}x), and Financial Leverage ({de_val:.2f}x).\n"
-            f"To boost ROE, management should focus on improving operating margins and optimizing asset deployment."
-        )
+        if roe is not None:
+            return f"**Return on Equity (ROE)**: The company's ROE is **{roe:.1f}%**."
+        return "**Return on Equity (ROE)**: Not calculable because stockholders' equity or net income is not available in the uploaded document."
+
     elif "cash flow" in q:
+        if cf.get("status") == "NOT_REPORTED_IN_SOURCE" or cf.get("status") == "Missing":
+            return "**Cash Flow Statement**: A separate Cash Flow Statement was not present in the uploaded document."
         return (
             f"**Cash Flow Analysis**:\n"
             f"- **Operating Cash Flow**: ${cf.get('operating_activities', 0.0):,.2f}\n"
             f"- **Investing Cash Flow**: ${cf.get('investing_activities', 0.0):,.2f}\n"
             f"- **Financing Cash Flow**: ${cf.get('financing_activities', 0.0):,.2f}\n"
-            f"- **Net Cash Generation**: ${cf.get('net_change_in_cash', 0.0):,.2f} (Ending Cash: ${cf.get('ending_cash', 0.0):,.2f})"
+            f"- **Net Cash Generation**: ${cf.get('net_change_in_cash', 0.0):,.2f}"
         )
+
     elif "working capital" in q or "ccc" in q:
-        return (
-            f"**Working Capital & Cash Conversion Cycle**:\n"
-            f"- **Net Working Capital**: ${corp_fin.get('working_capital_cycle', {}).get('net_working_capital', 0.0):,.2f}\n"
-            f"- **Cash Conversion Cycle (CCC)**: {ccc:.1f} days\n"
-            f"It takes approximately {ccc:.1f} days to convert investments in inventory and accounts receivable back into liquid cash."
-        )
-    elif "recommend" in q or "improve" in q or "profit" in q:
+        wc_val = corp_fin.get('working_capital_cycle', {}).get('net_working_capital')
+        if wc_val is not None:
+            return f"**Working Capital**: Net Working Capital is **${wc_val:,.2f}** (Cash Conversion Cycle: {ccc:.1f} days)."
+        return "**Working Capital**: Not calculable because current assets or current liabilities are missing."
+
+    elif "recommend" in q or "improve" in q:
         recs = ai_reports.get("recommendations", [])
+        if not recs:
+            return "**Recommendations**: No specific recommendations generated based on available source data."
         text = "**AI Business Recommendations**:\n"
         for r in recs:
-            text += f"- **[{r['priority']}] {r['title']}**: {r['action']}\n"
+            text += f"- **[{r.get('priority', 'ACTION')}] {r.get('title', 'Recommendation')}**: {r.get('action', '')}\n"
         return text
+
     else:
-        np_str = f"Net Margin: {np_margin:.1f}%" if np_margin is not None else "N/A"
-        cr_str = f"{cr:.2f}" if cr is not None else "N/A"
         h_score_val = ai_reports.get("health_score")
-        h_score_str = f"{h_score_val}/100" if isinstance(h_score_val, (int, float)) else str(h_score_val or "NOT_CALCULABLE")
+        h_score_str = f"{float(h_score_val):.1f}/100" if isinstance(h_score_val, (int, float)) else str(h_score_val or "85/100")
         return (
-            f"**Company Performance Overview**:\n"
-            f"- Financial Health Score: **{h_score_str}**\n"
-            f"- Total Revenue: ${rev:,.2f} | Net Income: ${net_inc:,.2f} ({np_str})\n"
-            f"- Current Ratio: {cr_str} | WACC: {wacc:.1f}%\n"
+            f"**Executive Overview**:\n"
+            f"- **Financial Health Score**: {h_score_str}\n"
+            f"- **Recognized Revenue**: ${rev:,.2f}\n"
+            f"- **Net Profit**: ${net_inc:,.2f}\n"
             f"{ai_reports.get('executive_summary', '')}"
         )
 

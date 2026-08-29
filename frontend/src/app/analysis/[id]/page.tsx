@@ -33,6 +33,8 @@ import {
 import Link from 'next/link';
 import { syncAnalysisToFirestore } from '@/lib/firebase';
 
+import { getCurrencySymbol } from '@/lib/currency';
+
 function AnalysisContent() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -143,7 +145,8 @@ function AnalysisContent() {
     );
   }
 
-  const { company_name, filename, statements, ratios, corporate_finance, ai_report, dupont_analysis, risk_intelligence, audit_report } = data;
+  const { company_name, filename, currency, statements, ratios, corporate_finance, ai_report, dupont_analysis, risk_intelligence, audit_report } = data;
+  const docCurrency = currency || 'USD';
 
   return (
     <div className="space-y-6">
@@ -154,10 +157,13 @@ function AnalysisContent() {
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-black text-slate-900 tracking-tight">{data.company_name}</h2>
               <span className="text-[10px] font-bold text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded-full border border-brand-200">
                 AUDITED REPORT #{data.upload_id}
+              </span>
+              <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                CURRENCY: {docCurrency} ({getCurrencySymbol(docCurrency)})
               </span>
             </div>
             <p className="text-xs text-slate-500 font-medium">{data.filename} • Analyzed on {new Date(data.created_at).toLocaleDateString()}</p>
@@ -202,7 +208,7 @@ function AnalysisContent() {
           { key: 'dupont', label: 'DuPont ROE Tree', icon: GitFork },
           { key: 'risk', label: 'Solvency Risk (Z-Score)', icon: ShieldAlert },
           { key: 'ratios', label: 'Ratio Analysis', icon: LineChart },
-          { key: 'corp_fin', label: 'Corporate Finance', icon: Building2 },
+          { key: 'corp_fin', label: 'Corporate Finance & Valuation (DCF)', icon: Building2 },
           { key: 'insights', label: 'AI Business Insights', icon: BrainCircuit },
           { key: 'chat', label: 'AI Copilot Chat', icon: MessageSquareText },
         ].map((tab) => {
@@ -239,22 +245,22 @@ function AnalysisContent() {
                 <p className="text-sm font-medium text-slate-800 leading-relaxed">{ai_report.executive_summary}</p>
               </div>
 
-              <FinancialCharts statements={statements} ratios={ratios} />
+              <FinancialCharts statements={statements} ratios={ratios} currency={docCurrency} />
             </div>
           </div>
         </div>
       )}
 
       {activeTab === 'audit' && (
-        <AuditorWorkingPapers auditReport={audit_report} companyName={company_name} />
+        <AuditorWorkingPapers auditReport={audit_report} companyName={company_name} currency={docCurrency} />
       )}
 
       {activeTab === 'statements' && (
-        <StatementViewer statements={statements} />
+        <StatementViewer statements={statements} currency={docCurrency} />
       )}
 
       {activeTab === 'trends' && (
-        <MultiPeriodViewer multiPeriod={data.multi_period} />
+        <MultiPeriodViewer multiPeriod={data.multi_period} currency={docCurrency} />
       )}
 
       {activeTab === 'dupont' && (
@@ -270,7 +276,7 @@ function AnalysisContent() {
       )}
 
       {activeTab === 'corp_fin' && (
-        <CorporateFinanceViewer corporateFinance={corporate_finance} />
+        <CorporateFinanceViewer corporateFinance={corporate_finance} currency={docCurrency} />
       )}
 
       {activeTab === 'insights' && (

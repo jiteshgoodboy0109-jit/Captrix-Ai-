@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Dict, Any, Optional
 
-def safe_ratio(num: float, den: float, multiply_100: bool = False, decimal_places: int = 2) -> Dict[str, Any]:
+def safe_ratio(num: Optional[float], den: Optional[float], multiply_100: bool = False, decimal_places: int = 2) -> Dict[str, Any]:
     """Calculate ratio with zero-denominator and missing-input protection."""
     if den == 0 or den is None or num is None:
         return {
@@ -44,23 +44,20 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     
     lt_liab_dict = bs.get("long_term_liabilities", {})
 
-    ca = float(curr_assets.get("total_current_assets") or 0.0) if isinstance(curr_assets, dict) else float(curr_assets or 0.0)
-    cl = float(curr_liab.get("total_current_liabilities") or 0.0) if isinstance(curr_liab, dict) else float(curr_liab or 0.0)
-    cash = float(curr_assets.get("cash_and_equivalents") or 0.0) if isinstance(curr_assets, dict) else 0.0
-    rec = float(curr_assets.get("accounts_receivable") or 0.0) if isinstance(curr_assets, dict) else 0.0
-    inv = float(curr_assets.get("inventory") or 0.0) if isinstance(curr_assets, dict) else 0.0
-    long_debt = float(lt_liab_dict.get("total_long_term_liabilities") or 0.0) if isinstance(lt_liab_dict, dict) else float(lt_liab_dict or 0.0)
-
-    if not bs_valid or equity is None:
-        ratio_status = "NOT_CALCULABLE"
+    ca = float(curr_assets.get("total_current_assets")) if (isinstance(curr_assets, dict) and curr_assets.get("total_current_assets") is not None) else None
+    cl = float(curr_liab.get("total_current_liabilities")) if (isinstance(curr_liab, dict) and curr_liab.get("total_current_liabilities") is not None) else None
+    cash = float(curr_assets.get("cash")) if (isinstance(curr_assets, dict) and curr_assets.get("cash") is not None) else None
+    rec = float(curr_assets.get("accounts_receivable")) if (isinstance(curr_assets, dict) and curr_assets.get("accounts_receivable") is not None) else None
+    inv = float(curr_assets.get("inventory")) if (isinstance(curr_assets, dict) and curr_assets.get("inventory") is not None) else None
+    long_debt = float(lt_liab_dict.get("total_long_term_liabilities")) if (isinstance(lt_liab_dict, dict) and lt_liab_dict.get("total_long_term_liabilities") is not None) else None
 
     # 1. Liquidity Ratios
-    cr_res = safe_ratio(ca, cl) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
-    quick_assets = ca - inv
-    qr_res = safe_ratio(quick_assets, cl) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
-    cash_r_res = safe_ratio(cash, cl) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
-    working_capital = ca - cl
-    wc_r_res = safe_ratio(working_capital, rev, multiply_100=True) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
+    cr_res = safe_ratio(ca, cl) if (bs_valid and ca is not None and cl is not None) else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
+    quick_assets = (ca - inv) if (ca is not None and inv is not None) else ca
+    qr_res = safe_ratio(quick_assets, cl) if (bs_valid and quick_assets is not None and cl is not None) else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
+    cash_r_res = safe_ratio(cash, cl) if (bs_valid and cash is not None and cl is not None) else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
+    working_capital = (ca - cl) if (ca is not None and cl is not None) else None
+    wc_r_res = safe_ratio(working_capital, rev, multiply_100=True) if (bs_valid and working_capital is not None and rev is not None) else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
 
     cr_val: Optional[float] = float(cr_res["value"]) if (cr_res["is_calculable"] and cr_res["value"] is not None) else None
     qr_val: Optional[float] = float(qr_res["value"]) if (qr_res["is_calculable"] and qr_res["value"] is not None) else None
@@ -120,7 +117,7 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     roa_res = safe_ratio(net_inc, total_assets, multiply_100=True) if bs_valid else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
     roe_res = safe_ratio(net_inc, equity, multiply_100=True) if (bs_valid and equity) else {"value": None, "display_value": "NOT_CALCULABLE", "is_calculable": False}
     
-    capital_employed = (equity + long_debt) if (equity is not None and (equity + long_debt) > 0) else ((total_assets - cl) if total_assets is not None else None)
+    capital_employed = (equity + long_debt) if (equity is not None and long_debt is not None and (equity + long_debt) > 0) else ((total_assets - cl) if (total_assets is not None and cl is not None) else None)
     if not bs_valid or capital_employed is None or capital_employed <= 0 or ebit is None or ebit == 0:
         roce_res = {
             "value": None,
@@ -372,24 +369,30 @@ def calculate_corporate_finance(statements: Dict[str, Any], ratios: Dict[str, An
     lt_liab_dict = bs.get("long_term_liabilities", {})
     long_debt = (lt_liab_dict.get("total_long_term_liabilities") if isinstance(lt_liab_dict, dict) else (lt_liab_dict if isinstance(lt_liab_dict, (int, float)) else 0.0)) or 0.0
 
-    # Working Capital & Cash Conversion Cycle (CCC)
-    dio = round((inv / cogs_val) * 365, 1) if cogs_val > 0 else 0.0
-    dso = round((rec / rev) * 365, 1) if (rev is not None and rev > 0) else 0.0
-    dpo = round((pay / cogs_val) * 365, 1) if cogs_val > 0 else 0.0
+    ca_val = float(ca) if (ca is not None and isinstance(ca, (int, float))) else 0.0
+    cl_val = float(cl) if (cl is not None and isinstance(cl, (int, float))) else 0.0
+    rec_val = float(rec) if (rec is not None and isinstance(rec, (int, float))) else 0.0
+    inv_val = float(inv) if (inv is not None and isinstance(inv, (int, float))) else 0.0
+    pay_val = float(pay) if (pay is not None and isinstance(pay, (int, float))) else 0.0
 
-    operating_cycle = round(dio + dso, 1)
-    cash_conversion_cycle = round(operating_cycle - dpo, 1)
+    # Working Capital & Cash Conversion Cycle (CCC)
+    dio = round((inv_val / cogs_val) * 365, 1) if (cogs_val > 0 and inv_val > 0) else None
+    dso = round((rec_val / rev) * 365, 1) if (rev is not None and rev > 0 and rec_val > 0) else None
+    dpo = round((pay_val / cogs_val) * 365, 1) if (cogs_val > 0 and pay_val > 0) else None
+
+    operating_cycle = round((dio or 0.0) + (dso or 0.0), 1) if (dio is not None or dso is not None) else None
+    cash_conversion_cycle = round(operating_cycle - (dpo or 0.0), 1) if (operating_cycle is not None and dpo is not None) else None
 
     working_capital_cycle = {
-        "current_assets": round(ca, 2),
-        "current_liabilities": round(cl, 2),
-        "net_working_capital": round(ca - cl, 2),
+        "current_assets": round(ca_val, 2) if ca is not None else None,
+        "current_liabilities": round(cl_val, 2) if cl is not None else None,
+        "net_working_capital": round(ca_val - cl_val, 2) if (ca is not None and cl is not None) else None,
         "days_inventory_outstanding_dio": dio,
         "days_sales_outstanding_dso": dso,
         "days_payable_outstanding_dpo": dpo,
         "operating_cycle": operating_cycle,
         "cash_conversion_cycle": cash_conversion_cycle,
-        "interpretation": f"Cash conversion cycle is {cash_conversion_cycle:.1f} days." if (cogs_val > 0 and rev is not None and rev > 0) else "Working capital cycle metrics require valid Revenue and COGS in source workbook."
+        "interpretation": f"Cash conversion cycle is {cash_conversion_cycle:.1f} days." if cash_conversion_cycle is not None else "Working capital cycle metrics require valid Revenue, COGS, and Receivables/Payables reported in source workbook."
     }
 
     # Capital Structure & WACC
@@ -418,8 +421,8 @@ def calculate_corporate_finance(statements: Dict[str, Any], ratios: Dict[str, An
     }
 
     # Capital Budgeting (Strict Zero-Fabrication: Derived from actual source numbers)
-    initial_investment = float(ca) if ca > 0 else 0.0
-    annual_fcf = float(net_inc) if net_inc != 0 else 0.0
+    initial_investment = float(ca) if (ca is not None and ca > 0) else 0.0
+    annual_fcf = float(net_inc) if (net_inc is not None and net_inc != 0) else 0.0
     is_calculable = initial_investment > 0 and annual_fcf != 0
 
     if is_calculable:
@@ -449,8 +452,15 @@ def calculate_corporate_finance(statements: Dict[str, Any], ratios: Dict[str, An
         "verdict": verdict
     }
 
+    # DCF Intrinsic Valuation & Scenario Analysis
+    from app.engine.valuation_engine import calculate_dcf_valuation, calculate_scenario_sensitivity
+    dcf_valuation = calculate_dcf_valuation(statements, ratios, wacc=wacc)
+    scenario_analysis = calculate_scenario_sensitivity(statements, ratios)
+
     return {
         "capital_budgeting": capital_budgeting,
         "capital_structure": capital_structure,
-        "working_capital_cycle": working_capital_cycle
+        "working_capital_cycle": working_capital_cycle,
+        "valuation_model": dcf_valuation,
+        "scenario_analysis": scenario_analysis
     }

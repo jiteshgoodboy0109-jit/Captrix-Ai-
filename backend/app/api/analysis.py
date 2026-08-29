@@ -81,6 +81,9 @@ def get_analysis_results(upload_id: int, db: Session = Depends(get_db), current_
         "efficiency": ratio.efficiency
     }
 
+    from app.engine.financial_analyzer import calculate_corporate_finance
+    corp_fin_payload = calculate_corporate_finance(statements_payload, ratios_dict)
+
     dupont_analysis = calculate_dupont_analysis(statements_payload, ratios_dict)
     risk_intelligence = calculate_risk_intelligence(statements_payload, ratios_dict)
     audit_report = perform_full_financial_audit(statements_payload, ratios_dict)
@@ -88,10 +91,22 @@ def get_analysis_results(upload_id: int, db: Session = Depends(get_db), current_
     canonical_dataset = build_canonical_dataset(items, upload.filename)
     reconciliation = perform_source_to_result_reconciliation(canonical_dataset, statements_payload, ratios_dict)
     quality_report = compute_financial_quality_score(reconciliation, statements_payload.get("validation_report", {}))
+    
+    # Determine document currency
+    doc_currency = (company.currency if company and company.currency else None) or "USD"
+    if doc_currency == "USD":
+        for it in items:
+            c = it.get("currency")
+            if c and c != "USD":
+                doc_currency = c
+                break
 
-    return {
+    from app.engine.output_validator import OutputValidator
+
+    raw_response = {
         "upload_id": upload.id,
         "company_name": company.name if company else "Enterprise Target",
+        "currency": doc_currency,
         "filename": upload.filename,
         "sheet_names": upload.sheet_names,
         "created_at": upload.created_at,
@@ -104,11 +119,7 @@ def get_analysis_results(upload_id: int, db: Session = Depends(get_db), current_
         "risk_intelligence": risk_intelligence,
         "audit_report": audit_report,
         "ratios": ratios_dict,
-        "corporate_finance": {
-            "capital_budgeting": corp.capital_budgeting,
-            "capital_structure": corp.capital_structure,
-            "working_capital_cycle": corp.working_capital_cycle
-        },
+        "corporate_finance": corp_fin_payload,
         "ai_report": {
             "health_score": quality_report.get("quality_score", ai_report.health_score),
             "executive_summary": ai_report.executive_summary,
@@ -117,3 +128,8 @@ def get_analysis_results(upload_id: int, db: Session = Depends(get_db), current_
             "recommendations": ai_report.recommendations
         }
     }
+
+    b_dataset = canonical_dataset.get("layer_a_raw_records", []) if isinstance(canonical_dataset, dict) else []
+    validated_response = OutputValidator.validate_and_filter_payload(raw_response, b_dataset)
+
+    return validated_response

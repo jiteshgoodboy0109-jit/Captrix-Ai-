@@ -12,6 +12,7 @@ class ChatRequest(BaseModel):
     upload_id: int
     query: str
 
+@router.post("")
 @router.post("/")
 def chat_with_financial_ai(
     req: ChatRequest,

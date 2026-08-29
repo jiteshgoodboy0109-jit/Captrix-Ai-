@@ -1,34 +1,29 @@
 'use client';
 import React, { useState } from 'react';
 import { FileText, Check, FileSpreadsheet } from 'lucide-react';
+import { formatCurrency, formatRawNumber, getCurrencySymbol } from '@/lib/currency';
 
 interface StatementViewerProps {
   statements: any;
+  currency?: string;
 }
 
-export default function StatementViewer({ statements }: StatementViewerProps) {
-  const [activeTab, setActiveTab] = useState<'balance' | 'income' | 'cash_flow' | 'tb'>('balance');
-
-  const fmt = (val: number | undefined | null) => {
-    if (val === undefined || val === null) return '$0';
-    const isNeg = val < 0;
-    const absVal = Math.abs(val);
-    const formatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(absVal);
-    return isNeg ? `(${formatted})` : formatted;
-  };
-
-  const fmtRaw = (val: number | undefined | null) => {
-    if (val === undefined || val === null) return '0';
-    const isNeg = val < 0;
-    const absVal = Math.abs(val);
-    const formatted = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(absVal);
-    return isNeg ? `(${formatted})` : formatted;
-  };
-
+export default function StatementViewer({ statements, currency = 'USD' }: StatementViewerProps) {
   const inc = statements?.income_statement || {};
   const bs = statements?.balance_sheet || {};
   const cf = statements?.cash_flow || {};
   const tb = statements?.trial_balance || {};
+
+  const hasIncome = Boolean(inc && (inc.total_revenue !== undefined || inc.revenue_from_operations !== undefined || inc.net_income !== undefined));
+  const hasBalance = Boolean(bs && bs.status !== 'NOT_REPORTED_IN_SOURCE' && (bs.total_assets !== undefined || bs.total_liabilities !== undefined || bs.current_assets));
+  const hasCashFlow = Boolean(cf && cf.status !== 'NOT_REPORTED_IN_SOURCE' && cf.status !== 'Missing' && (cf.operating_activities !== undefined || cf.net_cash_flow !== undefined));
+  const hasTB = Boolean(tb && tb.status !== 'NOT_REPORTED_IN_SOURCE' && tb.item_count > 0);
+
+  const initialTab: 'balance' | 'income' | 'cash_flow' | 'tb' = hasIncome ? 'income' : (hasBalance ? 'balance' : (hasTB ? 'tb' : 'income'));
+  const [activeTab, setActiveTab] = useState<'balance' | 'income' | 'cash_flow' | 'tb'>(initialTab);
+
+  const fmt = (val: number | undefined | null) => formatCurrency(val, currency);
+  const fmtRaw = (val: number | undefined | null) => formatCurrency(val, currency);
 
   const ca = bs.current_assets || {};
   const ppe = bs.property_plant_equipment || {};
@@ -50,38 +45,46 @@ export default function StatementViewer({ statements }: StatementViewerProps) {
         </div>
 
         <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-full sm:w-auto overflow-x-auto max-w-full scrollbar-none">
-          <button
-            onClick={() => setActiveTab('balance')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
-              activeTab === 'balance' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Balance Sheet & Assets
-          </button>
-          <button
-            onClick={() => setActiveTab('income')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
-              activeTab === 'income' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Income Statement
-          </button>
-          <button
-            onClick={() => setActiveTab('cash_flow')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
-              activeTab === 'cash_flow' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Cash Flow
-          </button>
-          <button
-            onClick={() => setActiveTab('tb')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
-              activeTab === 'tb' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Trial Balance
-          </button>
+          {hasIncome && (
+            <button
+              onClick={() => setActiveTab('income')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                activeTab === 'income' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Income Statement
+            </button>
+          )}
+          {hasBalance && (
+            <button
+              onClick={() => setActiveTab('balance')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+                activeTab === 'balance' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Balance Sheet & Assets
+            </button>
+          )}
+          {hasCashFlow && (
+            <button
+              onClick={() => setActiveTab('cash_flow')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                activeTab === 'cash_flow' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Cash Flow
+            </button>
+          )}
+          {hasTB && (
+            <button
+              onClick={() => setActiveTab('tb')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                activeTab === 'tb' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Trial Balance
+            </button>
+          )}
         </div>
       </div>
 
@@ -322,7 +325,7 @@ export default function StatementViewer({ statements }: StatementViewerProps) {
               <thead>
                 <tr className="bg-sky-200/80 text-slate-900 border-b border-sky-300 text-xs font-extrabold uppercase tracking-wider">
                   <th className="py-3 px-4">Line Item</th>
-                  <th className="py-3 px-4 text-right">Amount (USD)</th>
+                  <th className="py-3 px-4 text-right">Amount ({currency})</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">

@@ -82,12 +82,20 @@ def fetch_upload_payload(upload_id: int, db: Session, current_user: User):
         "recommendations": ai_rep.recommendations if ai_rep else ["Maintain positive working capital", "Monitor liquidity coverage"]
     }
 
-    return company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict
+    currency = company.currency if company and company.currency else "USD"
+    if currency == "USD":
+        for it in items:
+            c = it.get("currency")
+            if c and c != "USD":
+                currency = c
+                break
+
+    return company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict, currency
 
 @router.get("/pdf/{upload_id}")
 def download_pdf_report(upload_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict = fetch_upload_payload(upload_id, db, current_user)
-    pdf_bytes = generate_pdf_report(company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict)
+    company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict, currency = fetch_upload_payload(upload_id, db, current_user)
+    pdf_bytes = generate_pdf_report(company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict, currency=currency)
 
     return Response(
         content=pdf_bytes,
@@ -99,7 +107,7 @@ def download_pdf_report(upload_id: int, db: Session = Depends(get_db), current_u
 
 @router.get("/excel/{upload_id}")
 def download_excel_report(upload_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict = fetch_upload_payload(upload_id, db, current_user)
+    company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict, currency = fetch_upload_payload(upload_id, db, current_user)
     excel_bytes = generate_excel_report(company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict)
 
     return Response(
