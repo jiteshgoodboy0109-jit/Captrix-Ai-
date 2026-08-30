@@ -1,17 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: [
-    'firebase',
-    '@firebase/app',
-    '@firebase/auth',
-    '@firebase/firestore',
-    '@firebase/analytics',
-    '@firebase/component',
-    '@firebase/util',
-    '@firebase/logger',
-    '@firebase/webchannel-wrapper'
-  ],
+  transpilePackages: ['firebase'],
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {

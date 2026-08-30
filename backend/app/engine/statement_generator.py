@@ -63,16 +63,53 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     if not cogs_items:
         cogs_items = [i for i in latest_items if any(k in str(i.get("account_name")).lower() for k in ["cost of goods", "cost of sales", "cost of revenue", "cogs", "direct cost"]) and "change in inventory" not in str(i.get("account_name")).lower()]
 
-    depr_items = [i for i in eval_items if i.get("account_type") == "DEPRECIATION_EXPENSE" or "depreciation" in str(i.get("account_name")).lower() or "amortisation" in str(i.get("account_name")).lower()]
-    interest_items = [i for i in eval_items if i.get("account_type") == "INTEREST_EXPENSE" or ("interest" in str(i.get("account_name")).lower() and "expense" in str(i.get("account_name")).lower())]
-    tax_items = [i for i in eval_items if i.get("account_type") == "TAX_EXPENSE" or ("tax" in str(i.get("account_name")).lower() and "expense" in str(i.get("account_name")).lower())]
-    
-    expenses = [i for i in eval_items if i.get("account_type") in ["EXPENSE", "COGS", "DEPRECIATION_EXPENSE", "INTEREST_EXPENSE", "TAX_EXPENSE"] and "balance" not in str(i.get("sheet")).lower() and i.get("statement_type") != "BALANCE_SHEET"]
-    opex_items = [i for i in eval_items if i.get("account_type") == "EXPENSE" and "balance" not in str(i.get("sheet")).lower() and i.get("statement_type") != "BALANCE_SHEET" and i not in cogs_items + depr_items + interest_items + tax_items]
+    min_ni_row = min([i.get("row_index") or i.get("row") or 9999 for i in net_inc_items if (i.get("row_index") or i.get("row")) is not None] or [9999])
+    pnl_eval_items = [
+        i for i in eval_items
+        if ((i.get("row_index") or i.get("row") or 0) <= min_ni_row or "pnl" in str(i.get("sheet", "")).lower() or "income" in str(i.get("sheet", "")).lower())
+    ] if min_ni_row < 9999 else eval_items
 
-    assets = [i for i in eval_items if i.get("account_type") not in ["METRIC", "EXPENSE", "REVENUE", "COGS", "DEPRECIATION_EXPENSE", "INTEREST_EXPENSE", "TAX_EXPENSE", "EQUITY", "LIABILITY"] and ("ASSET" in str(i.get("account_type")) or i.get("account_type") == "ASSET") and "cash flow" not in str(i.get("sheet")).lower() and "cash flow" not in str(i.get("account_name")).lower() and not any(kw in str(i.get("account_name")).lower() for kw in ["share", "equity share", "eps", "face value", "number of shares"])]
-    liabilities = [i for i in eval_items if ("LIABILITY" in str(i.get("account_type")) or i.get("account_type") == "LIABILITY") and i.get("account_type") != "METRIC"]
-    equity = [i for i in eval_items if ("EQUITY" in str(i.get("account_type")) or i.get("account_type") == "EQUITY") and i.get("account_type") != "METRIC"]
+    depr_items = [
+        i for i in pnl_eval_items 
+        if (i.get("account_type") == "DEPRECIATION_EXPENSE" or "depreciation" in str(i.get("account_name")).lower() or "amortisation" in str(i.get("account_name")).lower())
+        and "cash flow" not in str(i.get("sheet", "")).lower()
+        and not is_summary_or_total_row(str(i.get("account_name")))
+    ]
+    interest_items = [
+        i for i in pnl_eval_items 
+        if (i.get("account_type") == "INTEREST_EXPENSE" or ("interest" in str(i.get("account_name")).lower() and "expense" in str(i.get("account_name")).lower()) or "finance cost" in str(i.get("account_name")).lower())
+        and "cash flow" not in str(i.get("sheet", "")).lower()
+        and not any(kw in str(i.get("account_name")).lower() for kw in ["interest received", "interest income", "finance income"])
+        and not is_summary_or_total_row(str(i.get("account_name")))
+    ]
+    interest_income_items = [
+        i for i in pnl_eval_items 
+        if any(kw in str(i.get("account_name")).lower() for kw in ["interest received", "interest income", "finance income"])
+        and "cash flow" not in str(i.get("sheet", "")).lower()
+        and not is_summary_or_total_row(str(i.get("account_name")))
+    ]
+    tax_items = [
+        i for i in pnl_eval_items 
+        if (i.get("account_type") == "TAX_EXPENSE" or ("tax" in str(i.get("account_name")).lower() and "expense" in str(i.get("account_name")).lower()) or ("taxation" in str(i.get("account_name")).lower() and "paid" not in str(i.get("account_name")).lower()))
+        and "cash flow" not in str(i.get("sheet", "")).lower()
+        and not any(kw in str(i.get("account_name")).lower() for kw in ["taxation paid", "tax paid", "deferred tax"])
+        and not is_summary_or_total_row(str(i.get("account_name")))
+    ]
+    
+    expenses = [i for i in eval_items if i.get("account_type") in ["EXPENSE", "COGS", "DEPRECIATION_EXPENSE", "INTEREST_EXPENSE", "TAX_EXPENSE"] and "balance" not in str(i.get("sheet")).lower() and i.get("statement_type") != "BALANCE_SHEET" and not is_summary_or_total_row(str(i.get("account_name")))]
+    opex_items = [i for i in eval_items if i.get("account_type") == "EXPENSE" and "balance" not in str(i.get("sheet")).lower() and i.get("statement_type") != "BALANCE_SHEET" and not is_summary_or_total_row(str(i.get("account_name"))) and i not in cogs_items + depr_items + interest_items + interest_income_items + tax_items]
+
+    assets = [
+        i for i in eval_items 
+        if i.get("account_type") not in ["METRIC", "EXPENSE", "REVENUE", "COGS", "DEPRECIATION_EXPENSE", "INTEREST_EXPENSE", "TAX_EXPENSE", "EQUITY", "LIABILITY", "CASH_FLOW", "GROSS_PROFIT", "OPERATING_INCOME", "NET_INCOME"] 
+        and ("ASSET" in str(i.get("account_type")) or i.get("account_type") == "ASSET") 
+        and "cash flow" not in str(i.get("sheet")).lower() 
+        and "cash flow" not in str(i.get("account_name")).lower() 
+        and not any(kw in str(i.get("account_name")).lower() for kw in ["share", "equity share", "eps", "face value", "number of shares", "cash generated from", "cash flows from", "cash flow from", "operating activit", "investing activit", "financing activit"])
+        and not is_summary_or_total_row(str(i.get("account_name")))
+    ]
+    liabilities = [i for i in eval_items if ("LIABILITY" in str(i.get("account_type")) or i.get("account_type") == "LIABILITY") and i.get("account_type") != "METRIC" and not is_summary_or_total_row(str(i.get("account_name")))]
+    equity = [i for i in eval_items if ("EQUITY" in str(i.get("account_type")) or i.get("account_type") == "EQUITY") and i.get("account_type") != "METRIC" and not is_summary_or_total_row(str(i.get("account_name")))]
 
     # 2. Income Statement Calculation (Strictly Grounded)
     total_revenue = sum(abs(i.get("net_amount", 0.0)) for i in revenues)
@@ -85,7 +122,7 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     has_cogs = len(cogs_items) > 0
     total_cogs = sum(abs(i.get("net_amount", 0.0)) for i in cogs_items) if has_cogs else None
 
-    # Check explicit Gross Profit item in source workbook if present
+    # 1. Gross Profit on Operations = Revenue from Operations - COGS
     explicit_gp_items = [i for i in latest_items if "gross profit" in str(i.get("account_name")).lower() or "gross margin" in str(i.get("account_name")).lower()]
     if explicit_gp_items:
         gross_profit = explicit_gp_items[0].get("net_amount", 0.0)
@@ -97,16 +134,38 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         gross_profit = None
         gross_profit_status = "NOT_CALCULABLE"
     
+    # 2. Operating Expenses
     total_opex = sum(abs(i.get("net_amount", 0.0)) for i in opex_items)
-    gp_val_for_ebitda = gross_profit if gross_profit is not None else total_revenue
+    
+    # 3. Core EBITDA & Operating Profit
+    gp_val_for_ebitda = gross_profit if gross_profit is not None else revenue_from_operations
     ebitda = gp_val_for_ebitda - total_opex
     
+    # 4. Profit from Operations = Gross Profit + Other Operating Income - Operating Expenses
+    explicit_op_items = [i for i in latest_items if any(k in str(i.get("account_name")).lower() for k in ["profit from operations", "operating profit", "operating income", "pbit"])]
+    if explicit_op_items:
+        profit_from_operations = abs(explicit_op_items[0].get("net_amount", 0.0))
+    elif gross_profit is not None:
+        profit_from_operations = gross_profit + (other_income or 0.0) - total_opex
+    else:
+        profit_from_operations = revenue_from_operations + (other_income or 0.0) - total_opex
+
+    # 5. Depreciation & Amortization
     depreciation = sum(abs(i.get("net_amount", 0.0)) for i in depr_items)
     ebit = ebitda - depreciation
     
+    # 6. Finance Income & Finance Costs
     interest_expense = sum(abs(i.get("net_amount", 0.0)) for i in interest_items)
-    ebt = ebit - interest_expense
+    interest_income = sum(abs(i.get("net_amount", 0.0)) for i in interest_income_items)
+
+    # 7. Profit Before Taxation (PBT) = Profit from Operations + Finance Income - Finance Costs
+    explicit_pbt_items = [i for i in latest_items if any(k in str(i.get("account_name")).lower() for k in ["profit before tax", "pbt", "ebt", "profit before taxation"])]
+    if explicit_pbt_items:
+        ebt = abs(explicit_pbt_items[0].get("net_amount", 0.0))
+    else:
+        ebt = profit_from_operations + (interest_income or 0.0) - interest_expense
     
+    # 7. Taxation & Net Profit
     tax_expense = sum(abs(i.get("net_amount", 0.0)) for i in tax_items)
     derived_net_income = ebt - tax_expense
     
@@ -122,21 +181,31 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
 
     income_statement = {
         "sales": round(revenue_from_operations, 2),
-        "other_income": round(other_income, 2),
         "revenue_from_operations": round(revenue_from_operations, 2),
+        "other_income": round(other_income, 2) if other_income else None,
+        "other_operating_income": round(other_income, 2) if other_income else None,
         "total_revenue": round(total_revenue, 2),
+        "total_revenue_and_income": round(total_revenue, 2),
         "cost_of_goods_sold": round(total_cogs, 2) if total_cogs is not None else None,
+        "cogs": round(total_cogs, 2) if total_cogs is not None else None,
         "cogs_status": "VERIFIED" if has_cogs else "NOT_REPORTED",
         "gross_profit": round(gross_profit, 2) if gross_profit is not None else None,
         "gross_profit_status": gross_profit_status,
         "operating_expenses": round(total_opex, 2),
+        "profit_from_operations": round(profit_from_operations, 2),
         "ebitda": round(ebitda, 2),
         "depreciation_amortization": round(depreciation, 2),
         "ebit": round(ebit, 2),
-        "interest_expense": round(interest_expense, 2),
+        "finance_income": round(interest_income, 2) if interest_income else None,
+        "interest_income": round(interest_income, 2) if interest_income else None,
+        "finance_cost": round(interest_expense, 2) if interest_expense else None,
+        "interest_expense": round(interest_expense, 2) if interest_expense else None,
+        "pbt": round(ebt, 2),
         "ebt": round(ebt, 2),
+        "tax": round(tax_expense, 2) if tax_items else None,
         "tax_expense": round(tax_expense, 2),
         "tax_status": "VERIFIED" if tax_items else "Not Separately Reported in Source Workbook",
+        "net_profit": round(net_income, 2),
         "net_income": round(net_income, 2),
         "net_income_source": net_income_source,
         "net_income_reconciliation_status": net_income_reconciliation_status
@@ -377,7 +446,7 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         },
         "total_liabilities": round(total_liabilities, 2) if total_liabilities is not None else None,
         "equity": equity_dict,
-        "total_liabilities_and_equity": round((total_liabilities or 0.0) + (total_equity or 0.0), 2) if (total_liabilities is not None or total_equity is not None) else None
+        "total_liabilities_and_equity": round(total_liabilities + total_equity, 2) if (total_liabilities is not None and total_equity is not None) else None
     }
 
     # 4. Strict Balance Sheet & Trial Balance Audit Checks
@@ -419,10 +488,10 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     # Source Reported vs Calculated Metrics Comparison
     calc_total_rev = round(revenue_from_operations + other_income, 2)
     calc_gp = round(revenue_from_operations - (total_cogs or 0.0), 2) if total_cogs is not None else None
-    calc_ebitda = round(calc_gp - total_opex, 2) if calc_gp is not None else None
-    calc_ebit = round(calc_ebitda - depreciation, 2) if calc_ebitda is not None else None
-    calc_pbt = round(calc_ebit - interest_expense, 2) if calc_ebit is not None else None
-    calc_net_inc = round(calc_pbt - tax_expense, 2) if calc_pbt is not None else None
+    calc_ebitda = round(ebitda, 2)
+    calc_ebit = round(ebitda - depreciation, 2)
+    calc_pbt = round(ebt, 2)
+    calc_net_inc = round(calc_pbt - tax_expense, 2)
 
     src_total_rev_items = [i for i in latest_items if "total revenue" in str(i.get("account_name")).lower() or "total income" in str(i.get("account_name")).lower()]
     src_total_rev = src_total_rev_items[0].get("net_amount") if src_total_rev_items else total_revenue
@@ -438,24 +507,24 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
 
     reconciliation_status = "DATA_RECONCILIATION_ERROR" if reconciliation_mismatches else "VERIFIED"
 
-    # Net Income Reconciliation (EBIT - Interest - Tax vs Reported Net Income)
-    derived_ni = ebit - interest_expense - tax_expense
+    # Net Income Reconciliation (EBT - Tax vs Reported Net Income)
+    derived_ni = calc_net_inc if calc_net_inc is not None else (ebt - tax_expense)
     ni_diff = round(abs(derived_ni - net_income), 2)
-    ni_rec_status = "PASS" if ni_diff <= 300.0 else "REVIEW_REQUIRED"
+    ni_rec_status = "PASS" if ni_diff <= 1.0 or (abs(net_income) > 0 and ni_diff / abs(net_income) <= 0.01) else "REVIEW_REQUIRED"
 
     tot_assets_str = f"${total_assets:,.2f}" if total_assets is not None else "N/A"
-    tot_liab_eq_val = (total_liabilities or 0.0) + (total_equity or 0.0) if (total_liabilities is not None or total_equity is not None) else None
+    tot_liab_eq_val = (total_liabilities + total_equity) if (total_liabilities is not None and total_equity is not None) else None
     tot_liab_eq_str = f"${tot_liab_eq_val:,.2f}" if tot_liab_eq_val is not None else "N/A"
 
     validation_report = {
         "balance_sheet_check": bs_status,
         "pnl_check": "PASS" if total_revenue > 0 else "FAIL",
-        "status": "PASS" if bs_status == "PASS" else "BALANCE_SHEET_MAPPING_FAILED",
+        "status": "PASS" if bs_status == "PASS" else ("INCOMPLETE" if bs_status == "INCOMPLETE" else "BALANCE_SHEET_MAPPING_FAILED"),
         "total_assets": round(total_assets, 2) if total_assets is not None else None,
         "total_liabilities_plus_equity": round(tot_liab_eq_val, 2) if tot_liab_eq_val is not None else None,
         "difference": bs_diff,
         "is_balanced": bs_status == "PASS",
-        "explanation": "Balance sheet equation holds within tolerance." if bs_status == "PASS" else ("Balance sheet data not reported in source for this period." if bs_status == "NOT_REPORTED" else f"Imbalance detected: Assets ({tot_assets_str}) != Liabilities + Equity ({tot_liab_eq_str})."),
+        "explanation": "Balance sheet equation holds within tolerance." if bs_status == "PASS" else ("Balance sheet data not reported in source for this period." if bs_status == "NOT_REPORTED" else ("Balance sheet documentation incomplete (Liabilities or Equity schedules missing)." if bs_status == "INCOMPLETE" else f"Imbalance detected: Assets ({tot_assets_str}) != Liabilities + Equity ({tot_liab_eq_str}).")),
         "trial_balance_check": tb_status,
         "trial_balance_difference": raw_tb_diff,
         "net_income_reconciliation_check": ni_rec_status,

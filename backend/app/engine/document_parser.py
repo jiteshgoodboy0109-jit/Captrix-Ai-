@@ -82,14 +82,18 @@ def is_summary_or_total_row(name: str) -> bool:
         "total long-term liabilities", "total long term liabilities", "total non-current liabilities",
         "total equity", "total owner's equity", "total liabilities and equity", "total liabilities & equity",
         "total revenue", "total income", "total sales", "total expenses", "total opex",
-        "gross profit", "operating profit", "ebitda", "ebit", "pbt", "profit before tax",
-        "net profit", "net income", "profit for the year", "net profit after tax", "pat"
+        "gross profit", "gross margin", "operating profit", "profit from operations", "ebitda", "ebit", "pbt", 
+        "profit before tax", "profit before taxation", "profit before taxes",
+        "net profit", "net income", "profit for the year", "net profit for the year", "profit after tax", "pat",
+        "total comprehensive income for the year", "total comprehensive income for the period"
     ]
     if name_lower in exact_totals:
         return True
     if name_lower.startswith("total ") or name_lower.startswith("subtotal ") or name_lower.startswith("sub-total "):
         return True
     if name_lower.endswith(" total") or name_lower.endswith(" subtotal"):
+        return True
+    if any(name_lower.startswith(prefix) for prefix in ["balance at ", "page of", "page "]):
         return True
     return False
 
@@ -107,7 +111,7 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
         detected_currency = fn_curr
 
     for s_name in sheet_data.keys():
-        s_curr, _ = identify_currency(str(s_name), default_iso="USD")
+        s_curr, _ = identify_currency(s_name, default_iso="USD")
         if s_curr != "USD":
             detected_currency = s_curr
             break
@@ -254,6 +258,8 @@ def is_non_financial_header(name: str) -> bool:
         r"^liabilities\s*(&|\+|and)\s*equity\s*(million|billion|in\s*cr|in\s*lakhs)?$",
         r"^particulars\s*(million|billion|in\s*cr|in\s*lakhs)?$",
         r"^.*fy\d{2,4}\s*(balance sheet|profit & loss|income statement|financial statements).*$",
+        r"^balance\s+at\s+(april|march|january|december).*$",
+        r"^page\s+(of|\d+).*$"
     ]
     for p in section_patterns:
         if re.match(p, n):
@@ -278,16 +284,24 @@ def classify_account(name: str, sheet_context: str = "") -> str:
     if any(kw in name_lower for kw in metric_keywords) or any(kw in name_lower for kw in ["no. of", "number of", "share count", "headcount", "dividend", "price:", "price", "report date"]):
         return "METRIC"
 
-    if any(kw in name_lower for kw in ["cash from", "operating activity", "investing activity", "financing activity", "net cash flow"]):
+    if any(kw in name_lower for kw in [
+        "cash generated from", "cash flows from", "cash flow from", "cash used in", 
+        "cash provided by", "cash from", "operating activity", "operating activities",
+        "investing activity", "investing activities", "financing activity", "financing activities", "net cash flow"
+    ]):
         return "CASH_FLOW"
     
     # Priority classification for Intangibles / Goodwill / Non-Current Assets
     if any(kw in name_lower for kw in ["goodwill", "intangible", "trademark", "patent", "copyright", "brand", "software", "license"]):
         return "ASSET"
         
-    # Priority classification for PBT / Operating Income / Profitability Metrics (MUST precede general tax rule)
-    if any(re.search(r'\b' + re.escape(kw) + r'\b', name_lower) for kw in ["profit before tax", "pbt", "ebt", "ebit", "profit before taxation"]):
+    # Priority classification for PBT / Operating Income / Profitability Subtotals
+    if "gross profit" in name_lower or "gross margin" in name_lower:
+        return "GROSS_PROFIT"
+    if any(re.search(r'\b' + re.escape(kw) + r'\b', name_lower) for kw in ["profit before tax", "pbt", "ebt", "ebit", "profit before taxation", "profit from operations", "operating profit", "operating income"]):
         return "OPERATING_INCOME"
+    if any(re.search(r'\b' + re.escape(kw) + r'\b', name_lower) for kw in ["net profit for the year", "net profit after tax", "net profit", "net income", "profit for the year"]):
+        return "NET_INCOME"
 
     # 1. FIRST CHECK EQUITY
     equity_keywords = [
@@ -917,12 +931,21 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                     continue
                 
                 if is_non_financial_header(acct_name):
-                    if acct_name.upper() in ["PROFIT & LOSS", "QUARTERS", "BALANCE SHEET", "CASH FLOW", "PRICE", "DERIVED"]:
+                    if any(kw in acct_name.upper() for kw in ["PROFIT & LOSS", "INCOME STATEMENT", "P&L"]):
+                        current_section = "INCOME_STATEMENT"
+                    elif any(kw in acct_name.upper() for kw in ["BALANCE SHEET"]):
+                        current_section = "BALANCE_SHEET"
+                    elif any(kw in acct_name.upper() for kw in ["CASH FLOW", "CASH FLOWS"]):
+                        current_section = "CASH_FLOW"
+                    elif acct_name.upper() in ["QUARTERS", "PRICE", "DERIVED"]:
                         current_section = acct_name.upper()
                     continue
 
+                if any(kw in acct_name.lower() for kw in ["cash generated from", "cash flows from", "cash flow from", "cash used in", "operating activities", "investing activities", "financing activities"]):
+                    current_section = "CASH_FLOW"
+
                 is_quarterly_item = (current_section == "QUARTERS") or ("quarters" in sheet_name.lower())
-                acct_type = classify_account(acct_name, sheet_name)
+                acct_type = "CASH_FLOW" if current_section == "CASH_FLOW" else classify_account(acct_name, sheet_name)
                 if acct_type == "NON_FINANCIAL_HEADER":
                     continue
 

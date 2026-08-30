@@ -111,7 +111,7 @@ class OutputValidator:
             ai_rep["recommendations"] = valid_recs
         # 5. Independent Verification Gate
         from app.engine.independent_verifier import IndependentVerifier
-        raw_items = canonical_dataset if isinstance(canonical_dataset, list) else canonical_dataset.get("layer_b_canonical_dataset", [])
+        raw_items = canonical_dataset if isinstance(canonical_dataset, list) else (canonical_dataset.get("layer_a_raw_records", []) or canonical_dataset.get("layer_b_canonical_dataset", []))
         iv_res = IndependentVerifier.verify_financial_output(
             raw_source_items=raw_items,
             canonical_dataset={"items": raw_items},

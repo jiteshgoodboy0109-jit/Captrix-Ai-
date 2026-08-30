@@ -99,12 +99,12 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
 
     tot_rev = inc.get("total_revenue", 0.0) or rev
     op_rev = inc.get("revenue_from_operations") or inc.get("sales") or rev
-    other_inc_val = inc.get("other_income", 0.0)
-    pbt_val = inc.get("ebt", 0.0) or inc.get("operating_income", 0.0)
-    tax_val = inc.get("tax_expense", 0.0)
+    other_inc_val = inc.get("other_operating_income") or inc.get("other_income") or 0.0
+    pbt_val = inc.get("pbt") or inc.get("ebt") or inc.get("operating_income") or 0.0
+    tax_val = inc.get("tax_expense") or inc.get("tax") or 0.0
     
-    other_inc_str = f"${other_inc_val:,.2f} Other Income; " if other_inc_val > 0 else ""
-    pbt_str = f"with Profit Before Tax of ${pbt_val:,.2f}, Tax Expense of ${tax_val:,.2f}, and " if pbt_val > 0 else ""
+    other_inc_str = f"${other_inc_val:,.2f} Other Income; " if (other_inc_val and other_inc_val > 0) else ""
+    pbt_str = f"with Profit Before Tax of ${pbt_val:,.2f}, Tax Expense of ${tax_val:,.2f}, and " if (pbt_val and pbt_val > 0) else ""
     wacc_str = f", with an estimated Cost of Capital (WACC) of {wacc:.1f}%" if (wacc is not None and isinstance(wacc, (int, float))) else ""
 
     hs_formatted = f"{float(health_score):.1f}/100" if isinstance(health_score, (int, float)) else str(health_score)

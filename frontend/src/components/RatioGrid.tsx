@@ -28,12 +28,18 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
 
   if (!ratios) return null;
 
+  const isCalcRatio = (r: any) => r && r.is_calculable !== false && r.value !== null && r.value !== undefined && !isNaN(r.value) && r.status !== 'NOT_CALCULABLE' && r.status !== 'DATA_MISSING' && r.status !== 'N/A';
+  const hasProf = Boolean(ratios.profitability && Object.values(ratios.profitability).some(isCalcRatio));
+  const hasLiq = Boolean(ratios.liquidity && Object.values(ratios.liquidity).some(isCalcRatio));
+  const hasSolv = Boolean(ratios.solvency && Object.values(ratios.solvency).some(isCalcRatio));
+  const hasEff = Boolean(ratios.efficiency && Object.values(ratios.efficiency).some(isCalcRatio));
+
   const categories = [
-    { key: 'all', label: 'All Categories' },
-    { key: 'profitability', label: 'Profitability' },
-    { key: 'liquidity', label: 'Liquidity & Cash' },
-    { key: 'solvency', label: 'Solvency & Debt' },
-    { key: 'efficiency', label: 'Asset Efficiency' }
+    { key: 'all', label: 'All Ratios' },
+    ...(hasProf ? [{ key: 'profitability', label: 'Profitability' }] : []),
+    ...(hasLiq ? [{ key: 'liquidity', label: 'Liquidity & Cash' }] : []),
+    ...(hasSolv ? [{ key: 'solvency', label: 'Solvency & Debt' }] : []),
+    ...(hasEff ? [{ key: 'efficiency', label: 'Asset Efficiency' }] : [])
   ];
 
   const getStatusBadge = (status: string) => {
@@ -79,7 +85,20 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
         const catObj = ratios[catKey];
         if (catObj && typeof catObj === 'object') {
           Object.keys(catObj).forEach((rKey) => {
-            list.push({ ...catObj[rKey], category: catKey, key: rKey });
+            const r = catObj[rKey];
+            if (r && typeof r === 'object') {
+              if (
+                r.is_calculable !== false && 
+                r.value !== null && 
+                r.value !== undefined && 
+                !isNaN(r.value) && 
+                r.status !== 'NOT_CALCULABLE' && 
+                r.status !== 'DATA_MISSING' && 
+                r.status !== 'N/A'
+              ) {
+                list.push({ ...r, category: catKey, key: rKey });
+              }
+            }
           });
         }
       }
@@ -150,11 +169,11 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
     };
   };
 
-  // Prepare Chart Data Sets
-  const profRatios = ratios.profitability ? Object.values(ratios.profitability) : [];
-  const liqRatios = ratios.liquidity ? Object.values(ratios.liquidity) : [];
-  const solvRatios = ratios.solvency ? Object.values(ratios.solvency) : [];
-  const effRatios = ratios.efficiency ? Object.values(ratios.efficiency) : [];
+  // Prepare Chart Data Sets (calculable only)
+  const profRatios = ratios.profitability ? Object.values(ratios.profitability).filter(isCalcRatio) : [];
+  const liqRatios = ratios.liquidity ? Object.values(ratios.liquidity).filter(isCalcRatio) : [];
+  const solvRatios = ratios.solvency ? Object.values(ratios.solvency).filter(isCalcRatio) : [];
+  const effRatios = ratios.efficiency ? Object.values(ratios.efficiency).filter(isCalcRatio) : [];
 
   // Count overall health summary
   const allFlattened = flattenRatios();
@@ -162,7 +181,7 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
   const warningCount = allFlattened.filter((r) => r.status === 'WARNING').length;
   const criticalCount = allFlattened.filter((r) => r.status === 'CRITICAL').length;
   const totalCount = allFlattened.length || 1;
-  const overallHealthPct = Math.round((healthyCount / totalCount) * 100);
+  const overallHealthPct = allFlattened.length > 0 ? Math.round((healthyCount / totalCount) * 100) : 100;
 
   return (
     <div className="space-y-6">

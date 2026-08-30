@@ -6,7 +6,6 @@ import HealthGauge from '@/components/HealthGauge';
 import StatementViewer from '@/components/StatementViewer';
 import RatioGrid from '@/components/RatioGrid';
 import CorporateFinanceViewer from '@/components/CorporateFinanceViewer';
-import AIInsightsPanel from '@/components/AIInsightsPanel';
 import ChatbotDrawer from '@/components/ChatbotDrawer';
 import FinancialCharts from '@/components/FinancialCharts';
 import MultiPeriodViewer from '@/components/MultiPeriodViewer';
@@ -198,38 +197,50 @@ function AnalysisContent() {
         </div>
       </div>
 
-      {/* Primary Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-1 overflow-x-auto">
-        {[
-          { key: 'overview', label: 'Executive Overview', icon: BrainCircuit },
-          { key: 'audit', label: 'Auditor Working Papers', icon: FileCheck },
-          { key: 'statements', label: 'Financial Statements', icon: FileText },
-          { key: 'trends', label: 'Multi-Year Trends & Forecast', icon: TrendingUp },
-          { key: 'dupont', label: 'DuPont ROE Tree', icon: GitFork },
-          { key: 'risk', label: 'Solvency Risk (Z-Score)', icon: ShieldAlert },
-          { key: 'ratios', label: 'Ratio Analysis', icon: LineChart },
-          { key: 'corp_fin', label: 'Corporate Finance & Valuation (DCF)', icon: Building2 },
-          { key: 'insights', label: 'AI Business Insights', icon: BrainCircuit },
-          { key: 'chat', label: 'AI Copilot Chat', icon: MessageSquareText },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => handleTabChange(tab.key)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                isActive
-                  ? 'bg-white text-brand-700 shadow-sm border border-slate-200'
-                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Icon className={`w-4 h-4 ${isActive ? 'text-brand-600' : 'text-slate-400'}`} />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Primary Navigation Tabs - Dynamically Filtered by Section Manifest */}
+      {(() => {
+        const manifest = data.section_manifest || {};
+        const hasStatements = manifest.has_income_statement || manifest.has_balance_sheet || manifest.has_cash_flow || manifest.has_trial_balance;
+        const hasTrends = Boolean(manifest.has_multi_period && data.multi_period);
+        const hasDupont = Boolean(manifest.has_dupont && dupont_analysis && dupont_analysis.is_calculable !== false);
+        const hasRisk = Boolean(manifest.has_solvency_risk && risk_intelligence && risk_intelligence.z_score?.is_calculable !== false);
+        const hasRatios = Boolean(manifest.has_ratios && ratios);
+        const hasCorpFin = Boolean(manifest.has_corporate_finance && corporate_finance);
+        const availableTabs = [
+          { key: 'overview', label: 'Executive Overview', icon: BrainCircuit, visible: true },
+          { key: 'audit', label: 'Auditor Working Papers', icon: FileCheck, visible: true },
+          { key: 'statements', label: 'Financial Statements', icon: FileText, visible: hasStatements },
+          { key: 'trends', label: 'Multi-Year Trends & Forecast', icon: TrendingUp, visible: hasTrends },
+          { key: 'dupont', label: 'DuPont ROE Tree', icon: GitFork, visible: hasDupont },
+          { key: 'risk', label: 'Solvency Risk (Z-Score)', icon: ShieldAlert, visible: hasRisk },
+          { key: 'ratios', label: 'Ratio Analysis', icon: LineChart, visible: hasRatios },
+          { key: 'corp_fin', label: 'Corporate Finance & Valuation (DCF)', icon: Building2, visible: hasCorpFin },
+          { key: 'chat', label: 'AI Copilot Chat', icon: MessageSquareText, visible: true },
+        ].filter(t => t.visible);
+
+        return (
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-1 overflow-x-auto">
+            {availableTabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => handleTabChange(tab.key)}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                    isActive
+                      ? 'bg-white text-brand-700 shadow-sm border border-slate-200'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-brand-600' : 'text-slate-400'}`} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* Tab Content Rendering */}
       {activeTab === 'overview' && (
@@ -256,7 +267,7 @@ function AnalysisContent() {
       )}
 
       {activeTab === 'statements' && (
-        <StatementViewer statements={statements} currency={docCurrency} />
+        <StatementViewer statements={statements} currency={docCurrency} canonical_dataset={data.canonical_dataset} />
       )}
 
       {activeTab === 'trends' && (
@@ -277,10 +288,6 @@ function AnalysisContent() {
 
       {activeTab === 'corp_fin' && (
         <CorporateFinanceViewer corporateFinance={corporate_finance} currency={docCurrency} />
-      )}
-
-      {activeTab === 'insights' && (
-        <AIInsightsPanel aiReport={ai_report} />
       )}
 
       {activeTab === 'chat' && (

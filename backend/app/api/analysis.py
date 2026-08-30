@@ -84,14 +84,6 @@ def get_analysis_results(upload_id: int, db: Session = Depends(get_db), current_
     from app.engine.financial_analyzer import calculate_corporate_finance
     corp_fin_payload = calculate_corporate_finance(statements_payload, ratios_dict)
 
-    dupont_analysis = calculate_dupont_analysis(statements_payload, ratios_dict)
-    risk_intelligence = calculate_risk_intelligence(statements_payload, ratios_dict)
-    audit_report = perform_full_financial_audit(statements_payload, ratios_dict)
-
-    canonical_dataset = build_canonical_dataset(items, upload.filename)
-    reconciliation = perform_source_to_result_reconciliation(canonical_dataset, statements_payload, ratios_dict)
-    quality_report = compute_financial_quality_score(reconciliation, statements_payload.get("validation_report", {}))
-    
     # Determine document currency
     doc_currency = (company.currency if company and company.currency else None) or "USD"
     if doc_currency == "USD":
@@ -100,6 +92,18 @@ def get_analysis_results(upload_id: int, db: Session = Depends(get_db), current_
             if c and c != "USD":
                 doc_currency = c
                 break
+
+    from app.engine.currency_engine import SUPPORTED_CURRENCIES
+    curr_info = SUPPORTED_CURRENCIES.get(doc_currency.upper(), {"symbol": "$"})
+    sym = curr_info.get("symbol", "$")
+
+    dupont_analysis = calculate_dupont_analysis(statements_payload, ratios_dict)
+    risk_intelligence = calculate_risk_intelligence(statements_payload, ratios_dict)
+    audit_report = perform_full_financial_audit(statements_payload, ratios_dict, canonical_items=items, currency_symbol=sym)
+
+    canonical_dataset = build_canonical_dataset(items, upload.filename)
+    reconciliation = perform_source_to_result_reconciliation(canonical_dataset, statements_payload, ratios_dict)
+    quality_report = compute_financial_quality_score(reconciliation, statements_payload.get("validation_report", {}))
 
     from app.engine.output_validator import OutputValidator
 
@@ -118,6 +122,7 @@ def get_analysis_results(upload_id: int, db: Session = Depends(get_db), current_
         "dupont_analysis": dupont_analysis,
         "risk_intelligence": risk_intelligence,
         "audit_report": audit_report,
+        "canonical_dataset": canonical_dataset,
         "ratios": ratios_dict,
         "corporate_finance": corp_fin_payload,
         "ai_report": {
