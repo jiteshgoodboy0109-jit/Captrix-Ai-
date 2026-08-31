@@ -62,7 +62,7 @@ async def upload_financial_file(
         parsed = parse_workbook(file_bytes, filename)
         sheet_names = parsed.get("sheet_names", [])
         items = parsed.get("normalized_items", [])
-        detected_currency = parsed.get("currency", "USD") or "USD"
+        detected_currency = parsed.get("currency") or "NOT_DETERMINED"
 
         if not items:
             raise HTTPException(status_code=400, detail="Could not extract valid financial data lines from document.")
@@ -102,9 +102,9 @@ async def upload_financial_file(
                     "sheet": item.get("sheet", "Sheet1"),
                     "row": item.get("row", 1),
                     "column": item.get("column", "A"),
-                    "year": item.get("year", "Current"),
-                    "unit": item.get("unit", "Units"),
-                    "currency": item.get("currency", "USD"),
+                    "year": item.get("year", "UNKNOWN"),
+                    "unit": item.get("unit", "NOT_DETERMINED"),
+                    "currency": item.get("currency", "NOT_DETERMINED"),
                     "source_sheet": item.get("source_sheet") or item.get("sheet", "Sheet1"),
                     "source_cell": item.get("source_cell") or f"{item.get('column', 'A')}{item.get('row', 1)}",
                     "source_column": item.get("source_column") or item.get("column", "A"),

@@ -30,7 +30,7 @@ def generate_excel_report(
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         # 1. Executive Summary & Health
-        target_year = statements.get("ledger_summary", {}).get("target_year", "FY2026")
+        target_year = statements.get("ledger_summary", {}).get("target_year", "UNKNOWN")
         latest_period_str = str(target_year)
 
         summary_rows = [

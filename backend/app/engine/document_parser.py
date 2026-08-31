@@ -620,7 +620,7 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     detected_sheets = []
     
     fname = (filename or "").lower()
-    meta_info = {"company_name": "Enterprise Entity", "currency": "USD", "unit": "Units"}
+    meta_info = {"company_name": "", "currency": "NOT_DETERMINED", "unit": "NOT_DETERMINED"}
 
     from app.engine.accounting_adapters import TallyAdapter, QuickBooksAdapter, XeroAdapter
 

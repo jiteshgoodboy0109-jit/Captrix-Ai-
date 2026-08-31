@@ -25,11 +25,11 @@ def generate_pdf_report(
     ratios: Dict[str, Any], 
     corp_fin: Dict[str, Any], 
     ai_reports: Dict[str, Any],
-    currency: str = "USD",
+    currency: str = "NOT_DETERMINED",
     audit_report: Optional[Dict[str, Any]] = None
 ) -> bytes:
     from app.engine.currency_engine import SUPPORTED_CURRENCIES
-    curr_upper = (currency or "USD").upper()
+    curr_upper = (currency or "NOT_DETERMINED").upper()
     if curr_upper == "NOT_DETERMINED":
         sym = ""
     elif curr_upper == "INR":
@@ -45,8 +45,8 @@ def generate_pdf_report(
     elif curr_upper in ["AED", "CHF"]:
         sym = f"{curr_upper} "
     else:
-        curr_info = SUPPORTED_CURRENCIES.get(curr_upper, {"symbol": "$"})
-        sym = curr_info.get("symbol", "$")
+        curr_info = SUPPORTED_CURRENCIES.get(curr_upper, {"symbol": ""})
+        sym = curr_info.get("symbol", "")
         if sym == "₹":
             sym = "INR "
 

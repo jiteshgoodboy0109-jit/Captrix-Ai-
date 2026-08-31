@@ -54,10 +54,10 @@ class PeriodResolver:
 
         if is_q or h_str:
             p_type = "QUARTERLY" if is_q else "HALF_YEAR"
-            p_id = f"{q_str or h_str}_{fy_str or 'FY2026'}"
+            p_id = f"{q_str or h_str}_{fy_str}" if fy_str else (q_str or h_str or "UNKNOWN")
             return {
                 "period_id": p_id,
-                "fiscal_year": fy_str or "FY2026",
+                "fiscal_year": fy_str or "UNKNOWN",
                 "period_type": p_type,
                 "quarter": q_str,
                 "half": h_str,
@@ -150,9 +150,9 @@ def build_canonical_dataset(normalized_items: List[Dict[str, Any]], filename: st
     layer_a_raw_records = []
     layer_b_canonical_metrics = {}
     
-    years_found = list(set(str(i.get("year", "Current")) for i in normalized_items if i.get("year")))
+    years_found = list(set(str(i.get("year", "UNKNOWN")) for i in normalized_items if i.get("year") and str(i.get("year")) not in ["None", "UNKNOWN", "Current", ""]))
     numeric_years = sorted([yr for yr in years_found if yr.isdigit() and len(yr) == 4], key=int)
-    target_year = numeric_years[-1] if numeric_years else (sorted(years_found)[-1] if years_found else "Current")
+    target_year = numeric_years[-1] if numeric_years else (sorted(years_found)[-1] if years_found else "UNKNOWN")
 
     for item in normalized_items:
         source_label = str(item.get("source_label") or item.get("account_name", "")).strip()
@@ -171,9 +171,9 @@ def build_canonical_dataset(normalized_items: List[Dict[str, Any]], filename: st
         row = item.get("row", 1)
         col = str(item.get("column", "A"))
         cell = item.get("source_cell") or f"{col}{row}"
-        year = str(item.get("year", "Current"))
-        unit = str(item.get("unit", "Units"))
-        currency = str(item.get("currency", "USD"))
+        year = str(item.get("year", "UNKNOWN"))
+        unit = str(item.get("unit", "NOT_DETERMINED"))
+        currency = str(item.get("currency", "NOT_DETERMINED"))
         acct_type = item.get("account_type", "ASSET")
         is_summary = item.get("is_summary", False)
         is_quarterly = item.get("is_quarterly", False)
