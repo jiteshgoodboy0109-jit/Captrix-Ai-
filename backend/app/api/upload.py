@@ -65,7 +65,10 @@ async def upload_financial_file(
         detected_currency = parsed.get("currency") or "NOT_DETERMINED"
 
         if not items:
-            raise HTTPException(status_code=400, detail="Could not extract valid financial data lines from document.")
+            raise HTTPException(
+                status_code=400, 
+                detail="No financial statement lines (Balance Sheet, Profit & Loss, Cash Flow, or Trial Balance) detected in the uploaded file. Please ensure your document contains structured accounting tables or ledgers."
+            )
 
         # 2. Company record with exact detected currency
         company = Company(name=final_company_name, industry="Enterprise Accounting", currency=detected_currency)

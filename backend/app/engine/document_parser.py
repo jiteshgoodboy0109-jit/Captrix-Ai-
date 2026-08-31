@@ -861,8 +861,90 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                 df = pd.DataFrame(records)
                 sheet_data["Sheet1"] = df
                 detected_sheets = ["Sheet1"]
+        elif fname.endswith(".pptx") or fname.endswith(".ppt"):
+            import zipfile
+            import xml.etree.ElementTree as ET
+            records = []
+            current_years: List[str] = []
+            text_lines = []
+            try:
+                with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+                    slide_names = [n for n in z.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")]
+                    for sname in sorted(slide_names):
+                        xml_content = z.read(sname)
+                        root = ET.fromstring(xml_content)
+                        for tr in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}tr'):
+                            row_cells = []
+                            for tc in tr.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}tc'):
+                                cell_texts = [t.text for t in tc.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}t') if t.text]
+                                row_cells.append(" ".join(cell_texts).strip())
+                            if any(row_cells):
+                                text_lines.append("  ".join(row_cells))
+                        for p in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}p'):
+                            p_texts = [t.text for t in p.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}t') if t.text]
+                            if p_texts:
+                                text_lines.append(" ".join(p_texts).strip())
+            except Exception:
+                pass
+
+            for line in text_lines:
+                line_str = line.strip()
+                if not line_str:
+                    continue
+                years_in_line = re.findall(r'\b(?:FY\s*)?(20[1-3][0-9])(?:\s*[-/]\s*(\d{2,4}))?\b', line_str, re.IGNORECASE)
+                if len(years_in_line) >= 2:
+                    extracted_years = []
+                    for m in years_in_line:
+                        base_yr = m[0]
+                        suff_yr = m[1]
+                        if suff_yr:
+                            full_yr = base_yr[:2] + suff_yr if len(suff_yr) == 2 else suff_yr
+                            extracted_years.append(full_yr)
+                        else:
+                            extracted_years.append(base_yr)
+                    current_years = extracted_years
+                    continue
+
+                tokens = line_str.split()
+                if len(tokens) < 2:
+                    continue
+                num_tokens = []
+                text_tokens = []
+                for t in reversed(tokens):
+                    t_clean = t.replace("$", "").replace("₹", "").replace("€", "").replace("£", "").replace(",", "").replace("(", "").replace(")", "").replace("[", "").replace("]", "").strip()
+                    if t_clean in ["—", "–", "-", ""] or (t_clean.replace(".", "", 1).isdigit() and t_clean.replace(".", "", 1) != ""):
+                        if len(t_clean) == 4 and t_clean.startswith("20") and t_clean not in current_years:
+                            text_tokens.insert(0, t)
+                        else:
+                            num_tokens.insert(0, t)
+                    else:
+                        text_tokens.insert(0, t)
+
+                if not num_tokens or not text_tokens:
+                    continue
+
+                label = " ".join(text_tokens)
+                if label.lower() in ["particulars", "notes", "notes:", "as at", "year ended", "description", "account name"]:
+                    continue
+
+                mapped = {}
+                num_vals = [clean_value(v) for v in num_tokens]
+                if len(num_vals) <= len(current_years):
+                    for i, val in enumerate(num_vals):
+                        yr_idx = len(current_years) - len(num_vals) + i
+                        mapped[current_years[yr_idx]] = val
+                else:
+                    for i in range(len(current_years)):
+                        mapped[current_years[i]] = num_vals[i]
+
+                records.append({"Particulars": label, **mapped})
+
+            if records:
+                df = pd.DataFrame(records)
+                sheet_data["Sheet1"] = df
+                detected_sheets = ["Sheet1"]
     except Exception as e:
-        print(f"Excel read error for {filename}: {e}")
+        print(f"Document read error for {filename}: {e}")
 
     SKIP_SHEETS = ["customization", "parameters", "template", "setup", "config", "instruction", "instructions", "notes", "readme"]
 
