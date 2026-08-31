@@ -1027,8 +1027,6 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                                 p_start = None
                                 p_end = None
 
-                            print(f"COLUMN {col_letter} -> raw header '{raw_hdr}' -> normalized fiscal year {f_yr}")
-
                             if current_section == "BALANCE_SHEET" or (acct_type and (acct_type in ["ASSET", "CASH_ASSET", "RECEIVABLE_ASSET", "INVENTORY_ASSET", "LIABILITY", "PAYABLE_LIABILITY", "DEBT_LIABILITY", "EQUITY"] or "ASSET" in acct_type or "LIABILITY" in acct_type or "EQUITY" in acct_type)):
                                 if current_section not in ["INCOME_STATEMENT", "CASH_FLOW", "CHANGES_IN_EQUITY", "NOTES"]:
                                     stmt_type = "BALANCE_SHEET"

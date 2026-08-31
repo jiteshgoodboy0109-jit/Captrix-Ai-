@@ -12,6 +12,7 @@ const getApiBaseUrl = (): string => {
 
 export const api = axios.create({
   baseURL: getApiBaseUrl(),
+  timeout: 300000, // 5 minutes timeout for high-MB financial documents & deep AI extraction
 });
 
 api.interceptors.request.use((config) => {

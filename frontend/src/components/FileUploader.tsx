@@ -31,10 +31,12 @@ export default function FileUploader({ onSuccess }: FileUploaderProps) {
     }
   };
 
+  const [processingStage, setProcessingStage] = useState<string>('Preparing upload...');
+
   const validateAndSetFile = (selectedFile: File) => {
     setError(null);
-    if (selectedFile.size > 25 * 1024 * 1024) {
-      setError('File size exceeds maximum allowed 25MB limit.');
+    if (selectedFile.size > 250 * 1024 * 1024) {
+      setError('File size exceeds maximum allowed 250MB limit.');
       return;
     }
     setFile(selectedFile);
@@ -48,7 +50,8 @@ export default function FileUploader({ onSuccess }: FileUploaderProps) {
     }
 
     setIsUploading(true);
-    setProgress(15);
+    setProgress(5);
+    setProcessingStage('Uploading document to secure server...');
     setError(null);
 
     const formData = new FormData();
@@ -56,23 +59,37 @@ export default function FileUploader({ onSuccess }: FileUploaderProps) {
     formData.append('company_name', companyName || 'Enterprise Company');
 
     try {
-      const progressInterval = setInterval(() => {
-        setProgress((prev) => (prev < 85 ? prev + 10 : prev));
-      }, 300);
+      const res = await api.post('/api/upload/', formData, {
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round((progressEvent.loaded * 60) / progressEvent.total);
+            setProgress(Math.max(5, percentCompleted));
+            if (percentCompleted < 60) {
+              setProcessingStage(`Uploading document (${(progressEvent.loaded / (1024 * 1024)).toFixed(1)} MB / ${(progressEvent.total / (1024 * 1024)).toFixed(1)} MB)...`);
+            } else {
+              setProcessingStage('Parsing workbook & extracting financial schedules...');
+            }
+          }
+        }
+      });
 
-      const res = await api.post('/api/upload/', formData);
+      setProcessingStage('Normalizing accounting ledgers & computing ratios...');
+      setProgress(85);
 
-      clearInterval(progressInterval);
-      setProgress(100);
+      setTimeout(() => {
+        setProcessingStage('Finalizing statements & financial intelligence...');
+        setProgress(100);
+      }, 400);
 
       setTimeout(() => {
         const uploadId = res.data.upload_id;
         if (onSuccess) onSuccess(uploadId);
         router.push(`/analysis/${uploadId}`);
-      }, 600);
+      }, 800);
     } catch (err: any) {
       setIsUploading(false);
       setProgress(0);
+      setProcessingStage('');
       console.error("Upload API Error Response:", err.response?.data);
       const serverMsg = err.response?.data?.detail;
       setError(typeof serverMsg === 'string' ? serverMsg : 'Failed to process financial workbook. Ensure file format is valid.');
@@ -89,7 +106,7 @@ export default function FileUploader({ onSuccess }: FileUploaderProps) {
         </div>
         <div>
           <h3 className="text-base font-bold text-slate-900">Upload Financial Document</h3>
-          <p className="text-xs text-slate-500">AI extracts sheets, text tables, Dr/Cr balances, statements, & ratios</p>
+          <p className="text-xs text-slate-500">AI extracts multi-MB sheets, PDF tables, Dr/Cr ledgers, statements, & ratios fast</p>
         </div>
       </div>
 
@@ -137,8 +154,8 @@ export default function FileUploader({ onSuccess }: FileUploaderProps) {
               <p className="text-sm font-semibold text-slate-800">
                 Drag and drop your Financial Document here, or <span className="text-brand-600 underline">browse</span>
               </p>
-              <p className="text-xs text-slate-400 mt-1">Supports PDF, Excel, Word, CSV, TXT, JSON, Images up to 25MB</p>
-              <p className="text-[11px] text-slate-400 mt-2 italic">Automatically handles Journal, Ledger, Trial Balance, Income Statement, Balance Sheet & Reports</p>
+              <p className="text-xs text-slate-400 mt-1">Supports PDF, Excel, Word, CSV, TXT, JSON, Images up to <span className="font-semibold text-brand-600">250MB</span></p>
+              <p className="text-[11px] text-slate-400 mt-2 italic">Optimized for high-speed multi-sheet extraction, Trial Balance, P&L, Balance Sheet & Reports</p>
             </label>
           ) : (
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white p-3.5 rounded-xl border border-emerald-200 shadow-sm gap-3">
@@ -176,7 +193,7 @@ export default function FileUploader({ onSuccess }: FileUploaderProps) {
             <div className="flex justify-between text-xs font-semibold text-slate-600">
               <span className="flex items-center gap-1.5">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-600" />
-                AI Analyzing Workbook & Statements...
+                {processingStage}
               </span>
               <span>{progress}%</span>
             </div>
@@ -198,12 +215,12 @@ export default function FileUploader({ onSuccess }: FileUploaderProps) {
             {isUploading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Processing Financial Data...</span>
+                <span>Processing Large Financial Document...</span>
               </>
             ) : (
               <>
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Run AI Financial Intelligence Engine</span>
+                <span>Run Fast AI Financial Analysis</span>
               </>
             )}
           </button>

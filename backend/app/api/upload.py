@@ -46,8 +46,8 @@ async def upload_financial_file(
         file_bytes = await file.read()
         file_size = len(file_bytes)
 
-        if file_size > 25 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="File size exceeds maximum 25MB limit.")
+        if file_size > 250 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File size exceeds maximum 250MB limit.")
 
         # Auto-detect or sanitize company name
         filename = file.filename or "uploaded_document"
@@ -87,7 +87,8 @@ async def upload_financial_file(
         db.commit()
         db.refresh(upload)
 
-        # 4. Save Financial Line Items
+        # 4. Save Financial Line Items (Fast Batch Bulk Insert)
+        fd_records = []
         for item in items:
             fd = FinancialData(
                 upload_id=upload.id,
@@ -121,7 +122,9 @@ async def upload_financial_file(
                     "scope": item.get("scope", "STANDALONE")
                 }
             )
-            db.add(fd)
+            fd_records.append(fd)
+        if fd_records:
+            db.add_all(fd_records)
 
         # 5. Financial Statement Engine
         statements = sanitize_json_data(generate_financial_statements(items))
