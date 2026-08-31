@@ -19,27 +19,36 @@ SUPPORTED_CURRENCIES: Dict[str, Dict[str, Any]] = {
     "CAD": {"name": "Canadian Dollar", "symbol": "$", "country": "Canada", "format": "WESTERN"},
     "SGD": {"name": "Singapore Dollar", "symbol": "$", "country": "Singapore", "format": "WESTERN"},
     "AED": {"name": "UAE Dirham", "symbol": "AED", "country": "United Arab Emirates", "format": "WESTERN"},
-    "CHF": {"name": "Swiss Franc", "symbol": "CHF", "country": "Switzerland", "format": "WESTERN"}
+    "CHF": {"name": "Swiss Franc", "symbol": "CHF", "country": "Switzerland", "format": "WESTERN"},
+    "ZAR": {"name": "South African Rand", "symbol": "R", "country": "South Africa", "format": "WESTERN"}
 }
 
 # Historical Exchange Rate Matrix against USD (Base = USD = 1.0)
 # Rates represent USD per 1 Unit of Source Currency (or Units of Target per 1 USD)
 HISTORICAL_USD_RATES: Dict[str, Dict[str, float]] = {
+    "2021": {
+        "USD": 1.0, "INR": 0.0135, "EUR": 1.183, "GBP": 1.375, "JPY": 0.0091,
+        "CNY": 0.155, "AUD": 0.751, "CAD": 0.798, "SGD": 0.744, "AED": 0.272, "CHF": 1.094, "ZAR": 0.068
+    },
+    "2022": {
+        "USD": 1.0, "INR": 0.0127, "EUR": 1.053, "GBP": 1.237, "JPY": 0.0076,
+        "CNY": 0.148, "AUD": 0.695, "CAD": 0.768, "SGD": 0.725, "AED": 0.272, "CHF": 1.047, "ZAR": 0.061
+    },
     "2023": {
         "USD": 1.0, "INR": 0.0121, "EUR": 1.081, "GBP": 1.243, "JPY": 0.0071,
-        "CNY": 0.141, "AUD": 0.664, "CAD": 0.741, "SGD": 0.743, "AED": 0.272, "CHF": 1.112
+        "CNY": 0.141, "AUD": 0.664, "CAD": 0.741, "SGD": 0.743, "AED": 0.272, "CHF": 1.112, "ZAR": 0.054
     },
     "2024": {
         "USD": 1.0, "INR": 0.0120, "EUR": 1.085, "GBP": 1.268, "JPY": 0.0066,
-        "CNY": 0.138, "AUD": 0.658, "CAD": 0.735, "SGD": 0.746, "AED": 0.272, "CHF": 1.125
+        "CNY": 0.138, "AUD": 0.658, "CAD": 0.735, "SGD": 0.746, "AED": 0.272, "CHF": 1.125, "ZAR": 0.055
     },
     "2025": {
         "USD": 1.0, "INR": 0.0118, "EUR": 1.078, "GBP": 1.272, "JPY": 0.0065,
-        "CNY": 0.137, "AUD": 0.652, "CAD": 0.730, "SGD": 0.748, "AED": 0.272, "CHF": 1.130
+        "CNY": 0.137, "AUD": 0.652, "CAD": 0.730, "SGD": 0.748, "AED": 0.272, "CHF": 1.130, "ZAR": 0.055
     },
     "2026": {
         "USD": 1.0, "INR": 0.0116, "EUR": 1.080, "GBP": 1.280, "JPY": 0.0064,
-        "CNY": 0.136, "AUD": 0.650, "CAD": 0.728, "SGD": 0.750, "AED": 0.272, "CHF": 1.135
+        "CNY": 0.136, "AUD": 0.650, "CAD": 0.728, "SGD": 0.750, "AED": 0.272, "CHF": 1.135, "ZAR": 0.055
     }
 }
 
@@ -76,24 +85,28 @@ def identify_currency(
         if re.search(rf'\b{iso}\b', text, re.IGNORECASE):
             return iso, multiplier
 
-    # 3. Symbol Match & Disambiguation
-    if "₹" in text or "rs" in t_lower or "rupee" in t_lower or "inr" in t_lower:
+    # 3. ZAR / South African Rand Match (Before generic letter matches)
+    if re.search(r'\b(zar|south african rand|rand)\b', t_lower) or re.search(r'(\b|[\(\[])r\b', text) or "(r)" in t_lower or "in r" in t_lower:
+        return "ZAR", multiplier
+
+    # 4. Symbol Match & Disambiguation with strict word boundary tokens
+    if "₹" in text or re.search(r'\b(rs|rs\.|inr|rupees?)\b', t_lower):
         return "INR", multiplier
-    if "€" in text or "euro" in t_lower:
+    if "€" in text or re.search(r'\b(eur|euros?)\b', t_lower):
         return "EUR", multiplier
-    if "£" in text or "pound" in t_lower:
+    if "£" in text or re.search(r'\b(gbp|pounds?)\b', t_lower):
         return "GBP", multiplier
-    if "aed" in t_lower or "dirham" in t_lower:
+    if re.search(r'\b(aed|dirhams?)\b', t_lower):
         return "AED", multiplier
-    if "chf" in t_lower or "franc" in t_lower:
+    if re.search(r'\b(chf|francs?)\b', t_lower):
         return "CHF", multiplier
-    if "¥" in text:
-        if "china" in country_context.lower() or "yuan" in t_lower or "rmb" in t_lower:
+    if "¥" in text or re.search(r'\b(jpy|yen|cny|yuan|rmb)\b', t_lower):
+        if "china" in country_context.lower() or "yuan" in t_lower or "rmb" in t_lower or "cny" in t_lower:
             return "CNY", multiplier
         return "JPY", multiplier
 
     # Ambiguous Symbol '$' Handling (USD vs CAD vs AUD vs SGD)
-    if "$" in text:
+    if "$" in text or re.search(r'\b(dollars?|usd|cad|aud|sgd)\b', t_lower):
         if "cad" in t_lower or "canada" in country_context.lower():
             return "CAD", multiplier
         if "aud" in t_lower or "australia" in country_context.lower():

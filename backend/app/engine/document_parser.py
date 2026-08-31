@@ -116,21 +116,10 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
             detected_currency = s_curr
             break
 
-    # Comprehensive currency token mapping
-    currency_map = {
-        "₹": "INR", "inr": "INR", "rupees": "INR", "rupee": "INR", "rs.": "INR", "rs": "INR", "in rs": "INR", "in ₹": "INR", "in inr": "INR",
-        "$": "USD", "usd": "USD", "dollar": "USD", "dollars": "USD",
-        "€": "EUR", "eur": "EUR", "euro": "EUR", "euros": "EUR", "in eur": "EUR",
-        "£": "GBP", "gbp": "GBP", "pound": "GBP", "pounds": "GBP", "in gbp": "GBP",
-        "aed": "AED", "dirham": "AED", "dirhams": "AED",
-        "¥": "JPY", "jpy": "JPY", "yen": "JPY", "cny": "CNY", "rmb": "CNY", "yuan": "CNY",
-        "cad": "CAD", "aud": "AUD", "sgd": "SGD", "chf": "CHF"
-    }
-    
     unit_map = [
-        ("crore", "₹ Crores"), ("crores", "₹ Crores"), ("cr", "₹ Crores"), ("cr.", "₹ Crores"),
+        ("crore", "Crores"), ("crores", "Crores"), ("cr", "Crores"), ("cr.", "Crores"),
         ("lakh", "Lakhs"), ("lakhs", "Lakhs"), ("lac", "Lakhs"), ("lacs", "Lakhs"),
-        ("million", "$ Millions"), ("millions", "$ Millions"), ("mn", "Millions"), ("m", "Millions"),
+        ("million", "Millions"), ("millions", "Millions"), ("mn", "Millions"),
         ("thousand", "Thousands"), ("thousands", "Thousands"), ("k", "Thousands"),
         ("billion", "Billions"), ("billions", "Billions"), ("bn", "Billions")
     ]
@@ -145,30 +134,24 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
             col_lower = col_str.lower()
             
             iso_found, _ = identify_currency(col_str, filename)
-            if iso_found != "USD":
+            if iso_found != "NOT_DETERMINED":
                 detected_currency = iso_found
-            
-            for kw, curr in currency_map.items():
-                if kw in col_lower:
-                    detected_currency = curr
-                    break
 
             for kw, u in unit_map:
-                if kw in col_lower:
+                if re.search(r'\b' + re.escape(kw) + r'\b', col_lower):
                     detected_unit = u
-                    if "₹" in u and detected_currency == "USD":
-                        detected_currency = "INR"
                     break
                     
-            m_label = re.search(r'(?:company|entity|corporate|organization)\s*(?:name)?\s*[:\-]\s*([A-Za-z0-9\s.,]+)', col_str, re.IGNORECASE)
+            m_label = re.search(r'(?:company|entity|corporate|organization)\s*(?:name)?\s*[:\-]\s*([A-Za-z0-9\s.,()]+)', col_str, re.IGNORECASE)
             if m_label:
                 cand = m_label.group(1).strip()
                 if cand and len(cand) < 80:
                     company_candidates.append(cand)
             
-            if any(suffix in col_str.upper() for suffix in [" LTD", " LIMITED", " INC", " CORP", " CORPORATION", " LLC", " GROUP", " HOLDINGS", " PLC", " CO."]):
+            corp_suffix_regex = r'\b(LTD|LIMITED|PROPRIETARY LIMITED|PTY LTD|\(PTY\) LTD|PVT LTD|PRIVATE LIMITED|INC\b|CORP\b|CORPORATION|LLC|GROUP|HOLDINGS|PLC)\b'
+            if re.search(corp_suffix_regex, col_str, re.IGNORECASE):
                 cleaned = re.sub(r'[\(\)\[\]]', '', col_str).strip()
-                if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss"]):
+                if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss", "income", "expense", "revenue", "cost", "asset", "liability"]):
                     company_candidates.append(cleaned)
         
         # Scan top 30 rows
@@ -180,33 +163,29 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
                 cell_str = str(cell).strip()
                 cell_lower = cell_str.lower()
                 
-                # Check currency
-                for kw, curr in currency_map.items():
-                    if kw in cell_lower:
-                        detected_currency = curr
-                        break
+                # Check currency strictly with word-boundary regex
+                iso_found, _ = identify_currency(cell_str, filename)
+                if iso_found != "NOT_DETERMINED":
+                    detected_currency = iso_found
                         
                 # Check unit scale
                 for kw, u in unit_map:
-                    if kw in cell_lower:
+                    if re.search(r'\b' + re.escape(kw) + r'\b', cell_lower):
                         detected_unit = u
-                        if "₹" in u and detected_currency == "USD":
-                            detected_currency = "INR"
                         break
                         
                 # Check Company Name candidates
                 # 1. Look for explicit labels
-                m_label = re.search(r'(?:company|entity|corporate|organization)\s*(?:name)?\s*[:\-]\s*([A-Za-z0-9\s.,]+)', cell_str, re.IGNORECASE)
+                m_label = re.search(r'(?:company|entity|corporate|organization)\s*(?:name)?\s*[:\-]\s*([A-Za-z0-9\s.,()]+)', cell_str, re.IGNORECASE)
                 if m_label:
                     cand = m_label.group(1).strip()
                     if cand and len(cand) < 80:
                         company_candidates.append(cand)
                 
-                # 2. Look for suffixes
-                if any(suffix in cell_str.upper() for suffix in [" LTD", " LIMITED", " INC", " CORP", " CORPORATION", " LLC", " GROUP", " HOLDINGS", " PLC", " CO."]):
-                    # Clean title line
+                # 2. Look for suffixes with word boundaries
+                if re.search(corp_suffix_regex, cell_str, re.IGNORECASE):
                     cleaned = re.sub(r'[\(\)\[\]]', '', cell_str).strip()
-                    if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss"]):
+                    if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss", "income", "expense", "revenue", "cost", "asset", "liability", "operations"]):
                         company_candidates.append(cleaned)
 
     if company_candidates:
@@ -238,12 +217,25 @@ def is_non_financial_header(name: str) -> bool:
     exact_headers = [
         "assets", "liabilities & equity", "liabilities and equity", "p&l", "profit & loss",
         "balance sheet", "cash flow", "cash flow statement", "particulars", "annual profit & loss",
-        "annual profit and loss", "fy2026 balance sheet", "annual cash flow"
+        "annual profit and loss", "fy2026 balance sheet", "annual cash flow",
+        "statement of financial position", "financial position", "statement of profit or loss",
+        "statement of comprehensive income", "statement of profit or loss and other comprehensive income",
+        "statement of changes in equity", "changes in equity", "statement of cash flows",
+        "statement of cash flow", "cash flows", "notes to the financial statements",
+        "statement of operations", "income statement", "accounting policies",
+        "figures in south african rand (r), unless otherwise stated.",
+        "figures in south african rand (r)", "figures in south african rand"
     ]
     if n in exact_headers:
         return True
         
     section_keywords = [
+        "statement of financial position", "statement of profit or loss",
+        "statement of comprehensive income", "statement of changes in equity",
+        "statement of cash flows", "statement of cash flow", "statement of operations",
+        "statement of assets and liabilities", "financial position",
+        "notes to the financial statements", "accounting policies",
+        "figures in south african rand", "figures in us dollars", "figures in indian rupees",
         "assets million", "liabilities & equity", "liabilities and equity",
         "particulars million", "fy2026 balance sheet", "annual profit & loss",
         "balance sheet", "profit & loss", "income statement", "cash flow statement",
@@ -257,8 +249,9 @@ def is_non_financial_header(name: str) -> bool:
         r"^assets\s*(million|billion|in\s*cr|in\s*lakhs|in\s*thousands)?$",
         r"^liabilities\s*(&|\+|and)\s*equity\s*(million|billion|in\s*cr|in\s*lakhs)?$",
         r"^particulars\s*(million|billion|in\s*cr|in\s*lakhs)?$",
-        r"^.*fy\d{2,4}\s*(balance sheet|profit & loss|income statement|financial statements).*$",
+        r"^.*fy\d{2,4}\s*(balance sheet|profit & loss|income statement|financial statements|financial position).*$",
         r"^balance\s+at\s+(april|march|january|december).*$",
+        r"^figures\s+in\s+.*$",
         r"^page\s+(of|\d+).*$"
     ]
     for p in section_patterns:
@@ -303,11 +296,17 @@ def classify_account(name: str, sheet_context: str = "") -> str:
     if any(re.search(r'\b' + re.escape(kw) + r'\b', name_lower) for kw in ["net profit for the year", "net profit after tax", "net profit", "net income", "profit for the year"]):
         return "NET_INCOME"
 
+    # Priority for Finance/Interest Income vs Finance Cost/Interest Expense
+    if any(re.search(r'\b' + re.escape(kw) + r'\b', name_lower) for kw in ["interest received", "interest income", "finance income", "investment income", "dividend income", "interest earned"]):
+        return "INTEREST_INCOME"
+
     # 1. FIRST CHECK EQUITY
     equity_keywords = [
         "common stock", "share capital", "equity share capital", "shareholders equity",
         "shareholders' equity", "shareholder equity", "shareholders’ equity",
-        "retained earnings", "reserves", "reserve", "surplus", "owner's equity", "owners equity", "capital stock", "treasury stock", "treasury shares"
+        "retained earnings", "retained income", "retained profit", "retained profits",
+        "accumulated profit", "accumulated loss", "reserves & retained", "reserves and retained",
+        "reserves", "reserve", "surplus", "owner's equity", "owners equity", "capital stock", "treasury stock", "treasury shares"
     ]
     if any(kw in name_lower for kw in equity_keywords) or (("equity" in name_lower or "capital" in name_lower) and "capital work" not in name_lower and "working capital" not in name_lower and "cost of capital" not in name_lower):
         if "shares" not in name_lower or "share capital" in name_lower or "equity share capital" in name_lower or "treasury shares" in name_lower:
@@ -316,20 +315,22 @@ def classify_account(name: str, sheet_context: str = "") -> str:
         return "ASSET"
     if "cash" in name_lower or "bank" in name_lower:
         return "CASH_ASSET"
-    if "receivable" in name_lower or "debtor" in name_lower:
+    if "receivable" in name_lower or "receivables" in name_lower or "debtor" in name_lower or "debtors" in name_lower:
         return "RECEIVABLE_ASSET"
     
     # 2. CHECK INVENTORY (ONLY AFTER EQUITY CHECK)
-    if "change in inventory" in name_lower or "changes in inventory" in name_lower or "inventory change" in name_lower:
+    if "change in inventory" in name_lower or "changes in inventory" in name_lower or "inventory change" in name_lower or "changes in inventories" in name_lower:
         return "COGS"
-    if "inventory" in name_lower or ("stock" in name_lower and not any(eq_term in name_lower for eq_term in ["common stock", "capital stock", "preferred stock", "stock capital", "equity stock", "treasury stock", "treasury shares"])):
+    if "inventory" in name_lower or "inventories" in name_lower or "inventor" in name_lower or ("stock" in name_lower and not any(eq_term in name_lower for eq_term in ["common stock", "capital stock", "preferred stock", "stock capital", "equity stock", "treasury stock", "treasury shares"])):
         return "INVENTORY_ASSET"
 
-    if "payable" in name_lower or "creditor" in name_lower:
+    if "payable" in name_lower or "payables" in name_lower or "creditor" in name_lower or "creditors" in name_lower:
         return "PAYABLE_LIABILITY"
     if "borrowing" in name_lower or "debt" in name_lower or "loan" in name_lower:
         return "DEBT_LIABILITY"
-    if "interest" in name_lower or "finance cost" in name_lower or "finance charge" in name_lower or "borrowing cost" in name_lower:
+    if any(kw in name_lower for kw in ["interest received", "interest income", "finance income", "investment income"]):
+        return "INTEREST_INCOME"
+    if "interest" in name_lower or "finance cost" in name_lower or "finance costs" in name_lower or "finance charge" in name_lower or "borrowing cost" in name_lower:
         return "INTEREST_EXPENSE"
     if "depreciation" in name_lower or "amortisation" in name_lower or "amortization" in name_lower or "depr" in name_lower:
         return "DEPRECIATION_EXPENSE"
@@ -927,8 +928,20 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                 continue
 
             # Determine account column index
-            acct_col_idx = list(df_body.columns).index(acct_col)
-            current_section = ""
+            # Initialize current section from sheet context
+            sheet_upper = sheet_name.upper()
+            if any(kw in sheet_upper for kw in ["FINANCIAL POSITION", "BALANCE SHEET", "ASSETS AND LIABILITIES"]):
+                current_section = "BALANCE_SHEET"
+            elif any(kw in sheet_upper for kw in ["PROFIT OR LOSS", "PROFIT & LOSS", "INCOME STATEMENT", "COMPREHENSIVE INCOME", "OPERATIONS", "P&L"]):
+                current_section = "INCOME_STATEMENT"
+            elif any(kw in sheet_upper for kw in ["CASH FLOW", "CASH FLOWS"]):
+                current_section = "CASH_FLOW"
+            elif any(kw in sheet_upper for kw in ["CHANGES IN EQUITY", "SHAREHOLDERS EQUITY"]):
+                current_section = "CHANGES_IN_EQUITY"
+            elif any(kw in sheet_upper for kw in ["NOTES", "ACCOUNTING POLICIES", "DISCLOSURES"]):
+                current_section = "NOTES"
+            else:
+                current_section = ""
 
             for idx, row in df_body.iterrows():
                 acct_name = str(row[acct_col]).strip() if pd.notna(row[acct_col]) else ""
@@ -936,14 +949,19 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                     continue
                 
                 if is_non_financial_header(acct_name):
-                    if any(kw in acct_name.upper() for kw in ["PROFIT & LOSS", "INCOME STATEMENT", "P&L"]):
+                    acct_upper = acct_name.upper()
+                    if any(kw in acct_upper for kw in ["PROFIT & LOSS", "INCOME STATEMENT", "P&L", "STATEMENT OF PROFIT OR LOSS", "STATEMENT OF COMPREHENSIVE INCOME", "STATEMENT OF OPERATIONS", "PROFIT OR LOSS AND OTHER COMPREHENSIVE INCOME", "PROFIT OR LOSS AND OCI"]):
                         current_section = "INCOME_STATEMENT"
-                    elif any(kw in acct_name.upper() for kw in ["BALANCE SHEET"]):
+                    elif any(kw in acct_upper for kw in ["BALANCE SHEET", "STATEMENT OF FINANCIAL POSITION", "FINANCIAL POSITION", "STATEMENT OF ASSETS AND LIABILITIES"]):
                         current_section = "BALANCE_SHEET"
-                    elif any(kw in acct_name.upper() for kw in ["CASH FLOW", "CASH FLOWS"]):
+                    elif any(kw in acct_upper for kw in ["CASH FLOW", "CASH FLOWS", "STATEMENT OF CASH FLOWS", "STATEMENT OF CASH FLOW"]):
                         current_section = "CASH_FLOW"
-                    elif acct_name.upper() in ["QUARTERS", "PRICE", "DERIVED"]:
-                        current_section = acct_name.upper()
+                    elif any(kw in acct_upper for kw in ["CHANGES IN EQUITY", "STATEMENT OF CHANGES IN EQUITY"]):
+                        current_section = "CHANGES_IN_EQUITY"
+                    elif any(kw in acct_upper for kw in ["NOTES", "ACCOUNTING POLICIES", "DISCLOSURES"]):
+                        current_section = "NOTES"
+                    elif acct_upper in ["QUARTERS", "PRICE", "DERIVED"]:
+                        current_section = acct_upper
                     continue
 
                 if any(kw in acct_name.lower() for kw in ["cash generated from", "cash flows from", "cash flow from", "cash used in", "operating activities", "investing activities", "financing activities"]):
@@ -1011,10 +1029,17 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
 
                             print(f"COLUMN {col_letter} -> raw header '{raw_hdr}' -> normalized fiscal year {f_yr}")
 
-                            if current_section == "BALANCE SHEET" or (acct_type and (acct_type in ["ASSET", "LIABILITY", "EQUITY"] or "ASSET" in acct_type or "LIABILITY" in acct_type or "EQUITY" in acct_type)):
-                                stmt_type = "BALANCE_SHEET"
-                            elif current_section == "CASH FLOW" or acct_type == "CASH_FLOW":
+                            if current_section == "BALANCE_SHEET" or (acct_type and (acct_type in ["ASSET", "CASH_ASSET", "RECEIVABLE_ASSET", "INVENTORY_ASSET", "LIABILITY", "PAYABLE_LIABILITY", "DEBT_LIABILITY", "EQUITY"] or "ASSET" in acct_type or "LIABILITY" in acct_type or "EQUITY" in acct_type)):
+                                if current_section not in ["INCOME_STATEMENT", "CASH_FLOW", "CHANGES_IN_EQUITY", "NOTES"]:
+                                    stmt_type = "BALANCE_SHEET"
+                                else:
+                                    stmt_type = current_section
+                            elif current_section == "CASH_FLOW" or acct_type == "CASH_FLOW":
                                 stmt_type = "CASH_FLOW"
+                            elif current_section == "CHANGES_IN_EQUITY":
+                                stmt_type = "CHANGES_IN_EQUITY"
+                            elif current_section == "NOTES":
+                                stmt_type = "NOTES"
                             else:
                                 stmt_type = "INCOME_STATEMENT"
 
