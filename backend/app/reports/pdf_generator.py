@@ -168,9 +168,11 @@ def generate_pdf_report(
         perf_val = planning_obj.get("performance_materiality", 0)
         triv_val = planning_obj.get("clearly_trivial_threshold", 0)
 
+        bench_label = planning_obj.get("benchmark_name") or planning_obj.get("benchmark_basis") or "Selected Benchmark"
+        pct_val = float(planning_obj.get("benchmark_percentage", 1.0))
         mat_table_data = [
             ["Materiality Benchmark", "Base Value / Source Reference", "Threshold Amount", "Audit Action Threshold"],
-            ["Planning Materiality (1.0%)", f"Total Revenue ({fmt(base_val, sym)})", fmt(pm_val, sym), "Errors above PM require evaluation / investigation."],
+            [f"Planning Materiality ({pct_val:.1f}%)", f"{bench_label} ({fmt(base_val, sym)})", fmt(pm_val, sym), "Errors above PM require evaluation / investigation."],
             ["Performance Materiality (75%)", f"Planning Materiality ({fmt(pm_val, sym)})", fmt(perf_val, sym), "Substantive sample adjustment threshold"],
             ["Clearly Trivial Limit (5%)", f"Planning Materiality ({fmt(pm_val, sym)})", fmt(triv_val, sym), "Variances < Limit deemed de minimis"]
         ]

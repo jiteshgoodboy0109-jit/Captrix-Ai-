@@ -112,93 +112,153 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     equity = [i for i in eval_items if ("EQUITY" in str(i.get("account_type")) or i.get("account_type") == "EQUITY") and i.get("account_type") != "METRIC" and not is_summary_or_total_row(str(i.get("account_name")))]
 
     # 2. Income Statement Calculation (Strictly Grounded)
-    total_revenue = sum(abs(i.get("net_amount", 0.0)) for i in revenues)
-    rev_ops_items = [i for i in revenues if "other income" not in str(i.get("account_name")).lower() and "other revenue" not in str(i.get("account_name")).lower() and "non-operating" not in str(i.get("account_name")).lower()]
-    other_inc_items = [i for i in revenues if "other income" in str(i.get("account_name")).lower() or "other revenue" in str(i.get("account_name")).lower() or "non-operating" in str(i.get("account_name")).lower()]
+    # 2. Income Statement Calculation (Strictly Grounded & Verified Arithmetic Pipeline)
+    rev_ops_items = [
+        i for i in revenues 
+        if "other income" not in str(i.get("account_name")).lower() 
+        and "other revenue" not in str(i.get("account_name")).lower() 
+        and "non-operating" not in str(i.get("account_name")).lower()
+        and not any(kw in str(i.get("account_name")).lower() for kw in ["interest received", "interest income", "finance income", "dividend income"])
+        and i not in interest_income_items
+    ]
+    other_inc_items = [
+        i for i in revenues 
+        if i not in rev_ops_items and i not in interest_income_items
+    ]
     
-    revenue_from_operations = sum(abs(i.get("net_amount", 0.0)) for i in rev_ops_items) if rev_ops_items else total_revenue
+    revenue_from_operations = sum(abs(i.get("net_amount", 0.0)) for i in rev_ops_items) if rev_ops_items else sum(abs(i.get("net_amount", 0.0)) for i in revenues if i not in interest_income_items)
     other_income = sum(abs(i.get("net_amount", 0.0)) for i in other_inc_items)
+    total_revenue = sum(abs(i.get("net_amount", 0.0)) for i in revenues)
 
     has_cogs = len(cogs_items) > 0
     total_cogs = sum(abs(i.get("net_amount", 0.0)) for i in cogs_items) if has_cogs else None
 
-    # 1. Gross Profit on Operations = Revenue from Operations - COGS
+    # --- 1. GROSS PROFIT VERIFICATION PIPELINE ---
+    # Formula: Gross Profit = Revenue from Operations - COGS
+    calc_gp = (revenue_from_operations - total_cogs) if (revenue_from_operations is not None and total_cogs is not None) else None
     explicit_gp_items = [i for i in latest_items if "gross profit" in str(i.get("account_name")).lower() or "gross margin" in str(i.get("account_name")).lower()]
-    if explicit_gp_items:
-        gross_profit = explicit_gp_items[0].get("net_amount", 0.0)
-        gross_profit_status = "EXPLICIT_SOURCE_ROW"
-    elif has_cogs and total_cogs is not None:
-        gross_profit = revenue_from_operations - total_cogs
+    
+    gross_profit_variance = 0.0
+    if explicit_gp_items and calc_gp is not None:
+        reported_gp = float(explicit_gp_items[0].get("net_amount", 0.0))
+        gross_profit_variance = round(reported_gp - calc_gp, 2)
+        if abs(gross_profit_variance) <= 1.0 or (abs(reported_gp) > 0 and abs(gross_profit_variance) / abs(reported_gp) <= 0.001):
+            gross_profit = reported_gp
+            gross_profit_status = "VERIFIED"
+        else:
+            gross_profit = reported_gp
+            gross_profit_status = "MISMATCH"
+    elif calc_gp is not None:
+        gross_profit = calc_gp
         gross_profit_status = "DERIVED"
+    elif explicit_gp_items:
+        gross_profit = float(explicit_gp_items[0].get("net_amount", 0.0))
+        gross_profit_status = "EXPLICIT_SOURCE_ROW"
     else:
         gross_profit = None
-        gross_profit_status = "NOT_CALCULABLE"
+        gross_profit_status = "NOT_CALCULABLE" if (revenue_from_operations is not None and not has_cogs) else "NOT_REPORTED"
     
     # 2. Operating Expenses
     total_opex = sum(abs(i.get("net_amount", 0.0)) for i in opex_items)
     
-    # 4. Depreciation & Amortization
+    # 3. Depreciation & Amortization
     depreciation = sum(abs(i.get("net_amount", 0.0)) for i in depr_items) if depr_items else None
 
-    # 5. Core EBIT & EBITDA
+    # 4. Finance Income & Finance Costs
+    interest_expense = sum(abs(i.get("net_amount", 0.0)) for i in interest_items) if interest_items else None
+    interest_income = sum(abs(i.get("net_amount", 0.0)) for i in interest_income_items) if interest_income_items else None
+
+    # --- 5. OPERATING PROFIT / EBIT / EBITDA VERIFICATION PIPELINE ---
     explicit_ebit_items = [i for i in latest_items if "ebit" in str(i.get("account_name")).lower() and "ebitda" not in str(i.get("account_name")).lower()]
     explicit_ebitda_items = [i for i in latest_items if "ebitda" in str(i.get("account_name")).lower()]
     explicit_op_items = [i for i in latest_items if any(k in str(i.get("account_name")).lower() for k in ["profit from operations", "operating profit", "operating income", "pbit"])]
 
-    if explicit_ebitda_items:
-        ebitda = abs(explicit_ebitda_items[0].get("net_amount", 0.0))
-    elif gross_profit is not None:
-        ebitda = gross_profit - total_opex
-    elif revenues:
-        ebitda = revenue_from_operations - total_opex
-    else:
-        ebitda = None
+    calc_ebitda = (gross_profit - total_opex) if gross_profit is not None else ((revenue_from_operations - total_opex) if revenues else None)
+    calc_ebit = (calc_ebitda - (depreciation or 0.0)) if calc_ebitda is not None else None
 
-    if explicit_ebit_items:
-        ebit = abs(explicit_ebit_items[0].get("net_amount", 0.0))
-    elif explicit_op_items:
-        ebit = abs(explicit_op_items[0].get("net_amount", 0.0))
-    elif ebitda is not None:
-        ebit = ebitda - (depreciation or 0.0)
-    else:
-        ebit = None
-
+    operating_profit_variance = 0.0
     if explicit_op_items:
-        profit_from_operations = abs(explicit_op_items[0].get("net_amount", 0.0))
-        op_source = "SOURCE_ROW"
-    elif ebit is not None:
+        reported_op = abs(float(explicit_op_items[0].get("net_amount", 0.0)))
+        profit_from_operations = reported_op
+        if calc_ebit is not None:
+            operating_profit_variance = round(reported_op - calc_ebit, 2)
+            if abs(operating_profit_variance) <= 1.0 or (reported_op > 0 and abs(operating_profit_variance) / reported_op <= 0.001):
+                operating_profit_status = "VERIFIED"
+            else:
+                operating_profit_status = "MISMATCH"
+        else:
+            operating_profit_status = "EXPLICIT_SOURCE_ROW"
+        ebit = reported_op
+        ebitda = (reported_op + (depreciation or 0.0)) if depreciation is not None else reported_op
+    elif explicit_ebit_items:
+        ebit = abs(float(explicit_ebit_items[0].get("net_amount", 0.0)))
         profit_from_operations = ebit
-        op_source = "DERIVED"
+        operating_profit_status = "EXPLICIT_SOURCE_ROW"
+        ebitda = (ebit + (depreciation or 0.0)) if depreciation is not None else ebit
+    elif calc_ebit is not None:
+        profit_from_operations = calc_ebit
+        operating_profit_status = "DERIVED"
+        ebit = calc_ebit
+        ebitda = calc_ebitda
     else:
         profit_from_operations = None
-        op_source = "NOT_REPORTED"
-    
-    # 6. Finance Income & Finance Costs
-    interest_expense = sum(abs(i.get("net_amount", 0.0)) for i in interest_items) if interest_items else None
-    interest_income = sum(abs(i.get("net_amount", 0.0)) for i in interest_income_items) if interest_income_items else None
+        operating_profit_status = "NOT_REPORTED"
+        ebit = None
+        ebitda = None
 
-    # 7. Profit Before Taxation (PBT) = EBIT + Other Income + Finance Income - Finance Costs
-    explicit_pbt_items = [i for i in latest_items if any(k in str(i.get("account_name")).lower() for k in ["profit before tax", "pbt", "ebt", "profit before taxation"])]
-    if explicit_pbt_items:
-        ebt = abs(explicit_pbt_items[0].get("net_amount", 0.0))
+    if explicit_ebitda_items:
+        ebitda = abs(float(explicit_ebitda_items[0].get("net_amount", 0.0)))
+
+    # --- 6. PROFIT BEFORE TAXATION (PBT / EBT) VERIFICATION PIPELINE ---
+    # Formula: PBT = Operating Profit + Non-Operating/Other Income + Finance Income - Finance Costs
+    if profit_from_operations is not None:
+        calc_pbt = profit_from_operations + (other_income if not explicit_op_items else 0.0) + (interest_income or 0.0) - (interest_expense or 0.0)
     elif ebit is not None:
-        ebt = ebit + (other_income if not explicit_op_items else 0.0) + (interest_income or 0.0) - (interest_expense or 0.0)
+        calc_pbt = ebit + (other_income if not explicit_op_items else 0.0) + (interest_income or 0.0) - (interest_expense or 0.0)
     elif revenues:
-        ebt = (revenue_from_operations or 0.0) + (other_income or 0.0) - total_opex - (depreciation or 0.0) + (interest_income or 0.0) - (interest_expense or 0.0)
+        calc_pbt = (revenue_from_operations or 0.0) + (other_income or 0.0) - total_opex - (depreciation or 0.0) + (interest_income or 0.0) - (interest_expense or 0.0)
+    else:
+        calc_pbt = None
+
+    explicit_pbt_items = [i for i in latest_items if any(k in str(i.get("account_name")).lower() for k in ["profit before tax", "pbt", "ebt", "profit before taxation", "profit before taxes"])]
+    pbt_variance = 0.0
+    if explicit_pbt_items:
+        reported_pbt = abs(float(explicit_pbt_items[0].get("net_amount", 0.0)))
+        ebt = reported_pbt
+        if calc_pbt is not None:
+            pbt_variance = round(reported_pbt - calc_pbt, 2)
+            if abs(pbt_variance) <= 1.0 or (reported_pbt > 0 and abs(pbt_variance) / reported_pbt <= 0.001):
+                pbt_status = "VERIFIED"
+            else:
+                pbt_status = "MISMATCH"
+        else:
+            pbt_status = "EXPLICIT_SOURCE_ROW"
+    elif calc_pbt is not None:
+        ebt = calc_pbt
+        pbt_status = "DERIVED"
     else:
         ebt = None
+        pbt_status = "NOT_REPORTED"
     
-    # 8. Taxation & Net Profit
+    # --- 7. TAXATION & NET PROFIT RECONCILIATION PIPELINE ---
     tax_expense = sum(abs(i.get("net_amount", 0.0)) for i in tax_items) if tax_items else None
-    derived_net_income = (ebt - (tax_expense or 0.0)) if ebt is not None else None
+    calc_net_income = (ebt - (tax_expense or 0.0)) if ebt is not None else None
     
+    net_income_variance = 0.0
     if net_inc_items:
-        net_income = net_inc_items[0].get("net_amount", 0.0) if len(net_inc_items) == 1 else sum(i.get("net_amount", 0.0) for i in net_inc_items)
+        reported_ni = net_inc_items[0].get("net_amount", 0.0) if len(net_inc_items) == 1 else sum(i.get("net_amount", 0.0) for i in net_inc_items)
+        net_income = float(reported_ni)
         net_income_source = "SOURCE_ROW"
-        diff_ni = abs(net_income - derived_net_income) if derived_net_income is not None else 0.0
-        net_income_reconciliation_status = "VERIFIED" if diff_ni <= 1.0 or (abs(net_income) > 0 and diff_ni / abs(net_income) <= 0.01) else "REVIEW_REQUIRED"
-    elif derived_net_income is not None:
-        net_income = derived_net_income
+        if calc_net_income is not None:
+            net_income_variance = round(reported_ni - calc_net_income, 2)
+            if abs(net_income_variance) <= 1.0 or (abs(reported_ni) > 0 and abs(net_income_variance) / abs(reported_ni) <= 0.01):
+                net_income_reconciliation_status = "VERIFIED"
+            else:
+                net_income_reconciliation_status = "MISMATCH"
+        else:
+            net_income_reconciliation_status = "EXPLICIT_SOURCE_ROW"
+    elif calc_net_income is not None:
+        net_income = calc_net_income
         net_income_source = "DERIVED"
         net_income_reconciliation_status = "DERIVED"
     else:
@@ -218,8 +278,13 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         "cogs_status": "VERIFIED" if has_cogs else "NOT_REPORTED",
         "gross_profit": round(gross_profit, 2) if gross_profit is not None else None,
         "gross_profit_status": gross_profit_status,
+        "gross_profit_calculated": round(calc_gp, 2) if calc_gp is not None else None,
+        "gross_profit_variance": gross_profit_variance,
         "operating_expenses": round(total_opex, 2) if opex_items else (0.0 if revenues else None),
         "profit_from_operations": round(profit_from_operations, 2) if profit_from_operations is not None else None,
+        "operating_profit_status": operating_profit_status,
+        "operating_profit_calculated": round(calc_ebit, 2) if calc_ebit is not None else None,
+        "operating_profit_variance": operating_profit_variance,
         "ebitda": round(ebitda, 2) if ebitda is not None else None,
         "depreciation_amortization": round(depreciation, 2) if depreciation is not None else None,
         "ebit": round(ebit, 2) if ebit is not None else None,
@@ -229,13 +294,18 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         "interest_expense": round(interest_expense, 2) if interest_expense is not None else None,
         "pbt": round(ebt, 2) if ebt is not None else None,
         "ebt": round(ebt, 2) if ebt is not None else None,
+        "pbt_status": pbt_status,
+        "pbt_calculated": round(calc_pbt, 2) if calc_pbt is not None else None,
+        "pbt_variance": pbt_variance,
         "tax": round(tax_expense, 2) if tax_expense is not None else None,
         "tax_expense": round(tax_expense, 2) if tax_expense is not None else None,
         "tax_status": "VERIFIED" if tax_items else "Not Separately Reported in Source Workbook",
         "net_profit": round(net_income, 2) if net_income is not None else None,
         "net_income": round(net_income, 2) if net_income is not None else None,
         "net_income_source": net_income_source,
-        "net_income_reconciliation_status": net_income_reconciliation_status
+        "net_income_reconciliation_status": net_income_reconciliation_status,
+        "net_income_calculated": round(calc_net_income, 2) if calc_net_income is not None else None,
+        "net_income_variance": net_income_variance
     }
 
     # 3. Balance Sheet Calculation (Strictly Grounded)
@@ -529,22 +599,30 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     src_net_inc_items = [i for i in latest_items if any(k in str(i.get("account_name")).lower() for k in ["net profit", "net income", "profit after tax", "profit for the year", "pat"])]
     src_net_inc = src_net_inc_items[0].get("net_amount") if src_net_inc_items else net_income
 
+    tot_assets_str = f"${total_assets:,.2f}" if total_assets is not None else "N/A"
+    tot_liab_eq_val = (total_liabilities + total_equity) if (total_liabilities is not None and total_equity is not None) else None
+    tot_liab_eq_str = f"${tot_liab_eq_val:,.2f}" if tot_liab_eq_val is not None else "N/A"
+
     reconciliation_mismatches = []
     if src_total_rev is not None and calc_total_rev is not None and abs(src_total_rev - calc_total_rev) > 1.0:
         reconciliation_mismatches.append(f"Total Revenue Mismatch: Source Reported ({src_total_rev:,.2f}) != Calculated ({calc_total_rev:,.2f})")
-    if src_net_inc is not None and calc_net_inc is not None and abs(src_net_inc - calc_net_inc) > 1.0:
-        reconciliation_mismatches.append(f"Net Income Mismatch: Source Reported ({src_net_inc:,.2f}) != Calculated ({calc_net_inc:,.2f})")
+    if gross_profit_status == "MISMATCH":
+        reconciliation_mismatches.append(f"Gross Profit Arithmetic Mismatch: Source Reported ({gross_profit:,.2f}) != Calculated Revenue - COGS ({calc_gp:,.2f}). Variance = {gross_profit_variance:,.2f}")
+    if operating_profit_status == "MISMATCH":
+        reconciliation_mismatches.append(f"Operating Profit Mismatch: Source Reported ({profit_from_operations:,.2f}) != Calculated EBIT ({calc_ebit:,.2f}). Variance = {operating_profit_variance:,.2f}")
+    if pbt_status == "MISMATCH":
+        reconciliation_mismatches.append(f"PBT Arithmetic Mismatch: Source Reported ({ebt:,.2f}) != Calculated Operating + Finance Items ({calc_pbt:,.2f}). Variance = {pbt_variance:,.2f}")
+    if net_income_reconciliation_status == "MISMATCH":
+        reconciliation_mismatches.append(f"Net Income Reconciliation Mismatch: Source Reported ({net_income:,.2f}) != Calculated PBT - Tax ({calc_net_income:,.2f}). Variance = {net_income_variance:,.2f}")
+    if bs_status == "UNBALANCED" and bs_diff is not None:
+        reconciliation_mismatches.append(f"Balance Sheet Identity Imbalance: Total Assets ({total_assets:,.2f}) != Total Liabilities + Equity ({tot_liab_eq_val:,.2f}). Variance = {bs_diff:,.2f}")
 
     reconciliation_status = "DATA_RECONCILIATION_ERROR" if reconciliation_mismatches else "VERIFIED"
 
     # Net Income Reconciliation (EBT - Tax vs Reported Net Income)
-    derived_ni = calc_net_inc if calc_net_inc is not None else ((ebt - tax_expense) if (ebt is not None and tax_expense is not None) else ebt)
-    ni_diff = round(abs(derived_ni - net_income), 2) if (derived_ni is not None and net_income is not None) else 0.0
-    ni_rec_status = "PASS" if (ni_diff <= 1.0 or (net_income is not None and abs(net_income) > 0 and ni_diff / abs(net_income) <= 0.01)) else "REVIEW_REQUIRED"
-
-    tot_assets_str = f"${total_assets:,.2f}" if total_assets is not None else "N/A"
-    tot_liab_eq_val = (total_liabilities + total_equity) if (total_liabilities is not None and total_equity is not None) else None
-    tot_liab_eq_str = f"${tot_liab_eq_val:,.2f}" if tot_liab_eq_val is not None else "N/A"
+    derived_ni = calc_net_income if calc_net_income is not None else ((ebt - tax_expense) if (ebt is not None and tax_expense is not None) else ebt)
+    ni_diff = abs(net_income_variance) if net_income_variance != 0.0 else (round(abs(derived_ni - net_income), 2) if (derived_ni is not None and net_income is not None) else 0.0)
+    ni_rec_status = "PASS" if net_income_reconciliation_status == "VERIFIED" else ("REVIEW_REQUIRED" if net_income_reconciliation_status in ["MISMATCH", "REVIEW_REQUIRED"] else "DERIVED")
 
     validation_report = {
         "balance_sheet_check": bs_status,
@@ -567,11 +645,21 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         "calculated_metrics": {
             "calculated_total_revenue": calc_total_rev,
             "calculated_gross_profit": calc_gp,
+            "gross_profit_status": gross_profit_status,
+            "gross_profit_variance": gross_profit_variance,
             "calculated_ebitda": calc_ebitda,
             "calculated_ebit": calc_ebit,
+            "operating_profit_status": operating_profit_status,
+            "operating_profit_variance": operating_profit_variance,
             "calculated_pbt": calc_pbt,
-            "calculated_net_income": calc_net_inc,
+            "pbt_status": pbt_status,
+            "pbt_variance": pbt_variance,
+            "calculated_net_income": calc_net_income,
+            "net_income_status": net_income_reconciliation_status,
+            "net_income_variance": net_income_variance,
             "source_reported_total_revenue": src_total_rev,
+            "source_reported_gross_profit": gross_profit if explicit_gp_items else None,
+            "source_reported_pbt": ebt if explicit_pbt_items else None,
             "source_reported_net_income": src_net_inc,
             "reconciliation_status": reconciliation_status,
             "mismatches": reconciliation_mismatches

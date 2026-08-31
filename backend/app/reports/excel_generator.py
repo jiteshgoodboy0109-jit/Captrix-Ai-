@@ -87,7 +87,7 @@ def generate_excel_report(
                 "Account Name": i.get("account_name", ""),
                 "Classification": i.get("account_type", ""),
                 "Net Amount": i.get("net_amount", 0.0),
-                "Period": i.get("fiscal_year", "FY2026"),
+                "Period": i.get("fiscal_year") or i.get("year") or "UNKNOWN",
                 "Source Sheet": i.get("source_sheet", "Sheet1"),
                 "Source Cell": i.get("source_cell", ""),
                 "Source Row": i.get("source_row", ""),

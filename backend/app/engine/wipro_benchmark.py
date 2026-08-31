@@ -1,138 +1,20 @@
 """
-Universal Enterprise Golden Test & Benchmark Suite
-Embedded regression benchmark evaluating model candidates against authoritative ground truth values.
+Universal Enterprise Benchmark (Backwards Compatibility Proxy)
+Re-exports from app.engine.enterprise_benchmark.
 """
 
-from typing import Dict, Any
-from app.engine.model_evaluator import run_automatic_model_discovery, evaluate_model_extraction
+from app.engine.enterprise_benchmark import (
+    ENTERPRISE_GROUND_TRUTH,
+    SECTOR_GROUND_TRUTHS,
+    CANDIDATE_MODEL_EXTRACTIONS,
+    run_enterprise_golden_benchmark,
+    run_wipro_golden_benchmark
+)
 
-ENTERPRISE_GROUND_TRUTH: Dict[str, Any] = {
-    "company": "Enterprise Target Entity",
-    "period": "FY2026",
-    "currency": "USD",
-    "unit": "Millions",
-    "total_revenue": 92624.0,
-    "tax": 4076.7,
-    "net_income": 13197.4,
-    "interest": 1457.7,
-    "total_assets": 140883.5,
-    "borrowings": 20291.0,
-    "total_liabilities": 65000.0,
-    "total_equity": 75883.5,
-    "operating_cash_flow": 14931.6,
-    "investing_cash_flow": -2447.5,
-    "financing_cash_flow": -14126.0,
-    "net_cash_flow": -1641.9,
-    "goodwill": "Not Separately Reported"
-}
-
-WIPRO_GROUND_TRUTH = ENTERPRISE_GROUND_TRUTH
-
-# Simulated candidate model outputs for regression benchmarking
-CANDIDATE_MODEL_EXTRACTIONS: Dict[str, Dict[str, Any]] = {
-    "deterministic-source-parser": {
-        "total_revenue": 92624.0,
-        "tax": 4076.7,
-        "net_income": 13197.4,
-        "interest": 1457.7,
-        "total_assets": 140883.5,
-        "borrowings": 20291.0,
-        "total_liabilities": 65000.0,
-        "total_equity": 75883.5,
-        "operating_cash_flow": 14931.6,
-        "investing_cash_flow": -2447.5,
-        "financing_cash_flow": -14126.0,
-        "net_cash_flow": -1641.9,
-        "goodwill": "Not Separately Reported"
-    },
-    "gemini-3.6-flash-high": {
-        "total_revenue": 92624.0,
-        "tax": 4076.7,
-        "net_income": 13197.4,
-        "interest": 1457.7,
-        "total_assets": 140883.5,
-        "borrowings": 20291.0,
-        "total_liabilities": 65000.0,
-        "total_equity": 75883.5,
-        "operating_cash_flow": 14931.6,
-        "investing_cash_flow": -2447.5,
-        "financing_cash_flow": -14126.0,
-        "net_cash_flow": -1641.9,
-        "goodwill": "Not Separately Reported"
-    },
-    "gemini-1.5-pro": {
-        "total_revenue": 92624.0,
-        "tax": 4076.7,
-        "net_income": 13197.4,
-        "interest": 1457.7,
-        "total_assets": 140883.5,
-        "borrowings": 20291.0,
-        "total_liabilities": 65000.0,
-        "total_equity": 75883.5,
-        "operating_cash_flow": 14931.6,
-        "investing_cash_flow": -2447.5,
-        "financing_cash_flow": -14126.0,
-        "net_cash_flow": -1641.9,
-        "goodwill": "Not Separately Reported"
-    },
-    "gpt-4o-financial-extractor": {
-        "total_revenue": 92624.0,
-        "tax": 4076.7,
-        "net_income": -14092.82,  # Simulated sign error to test critical failure penalty
-        "interest": 1457.7,
-        "total_assets": 140883.5,
-        "borrowings": 20291.0,
-        "total_liabilities": 65000.0,
-        "total_equity": 75883.5,
-        "operating_cash_flow": 14931.6,
-        "investing_cash_flow": -2447.5,
-        "financing_cash_flow": -14126.0,
-        "net_cash_flow": -1641.9,
-        "goodwill": 4523.2  # Simulated hallucination
-    },
-    "claude-3-5-sonnet-financial": {
-        "total_revenue": 91624.0,  # Value mismatch
-        "tax": 4076.7,
-        "net_income": 13197.4,
-        "interest": 1457.7,
-        "total_assets": 140883.5,
-        "borrowings": 20291.0,
-        "total_liabilities": 65000.0,
-        "total_equity": 75883.5,
-        "operating_cash_flow": 14931.6,
-        "investing_cash_flow": -2447.5,
-        "financing_cash_flow": -14126.0,
-        "net_cash_flow": -1641.9,
-        "goodwill": "Not Separately Reported"
-    }
-}
-
-def run_enterprise_golden_benchmark() -> Dict[str, Any]:
-    """Execute the universal golden regression benchmark across all registered candidate models."""
-    profile = {
-        "filename": "Enterprise_Audited_Financials.xlsx",
-        "type": "excel_workbook",
-        "sheet_count": 4,
-        "total_rows": 280,
-        "table_density": 0.85,
-        "layout_complexity": "high",
-        "requires_vision": False,
-        "requires_ocr": False,
-        "financial_statement_count": 4,
-        "number_of_periods": 3,
-        "currency": "USD",
-        "unit": "Millions"
-    }
-
-    result = run_automatic_model_discovery(
-        ground_truth_metrics=ENTERPRISE_GROUND_TRUTH,
-        candidate_extractions=CANDIDATE_MODEL_EXTRACTIONS,
-        document_profile=profile
-    )
-
-    result["benchmark_name"] = "Enterprise Universal Golden Accuracy Benchmark"
-    result["passed_regression_test"] = result["critical_metric_accuracy"] >= 98.0 and result["hallucination_rate_pct"] == 0.0
-
-    return result
-
-run_wipro_golden_benchmark = run_enterprise_golden_benchmark
+__all__ = [
+    "ENTERPRISE_GROUND_TRUTH",
+    "SECTOR_GROUND_TRUTHS",
+    "CANDIDATE_MODEL_EXTRACTIONS",
+    "run_enterprise_golden_benchmark",
+    "run_wipro_golden_benchmark"
+]

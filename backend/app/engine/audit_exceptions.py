@@ -138,11 +138,71 @@ class AuditExceptionManager:
             })
             exc_id_counter += 1
 
+        # 6. Income Statement Line-Item Arithmetic Reconciliation Mismatches
+        inc = statements.get("income_statement", {}) if isinstance(statements, dict) else {}
+        if inc.get("gross_profit_status") == "MISMATCH":
+            gp_rep = inc.get("gross_profit", 0.0) or 0.0
+            gp_calc = inc.get("gross_profit_calculated", 0.0) or 0.0
+            gp_var = abs(inc.get("gross_profit_variance", 0.0) or (gp_rep - gp_calc))
+            exceptions.append({
+                "exception_id": f"EXC-{exc_id_counter:03d}",
+                "category": "RECONCILIATION_FAILURE",
+                "audit_area": "Gross Profit Arithmetic",
+                "issue_title": "Gross Profit Subtotal Mismatch",
+                "description": f"Reported Gross Profit ({sym}{gp_rep:,.2f}) does not equal Revenue minus COGS ({sym}{gp_calc:,.2f}). Arithmetic variance: {sym}{gp_var:,.2f}.",
+                "severity": "MATERIAL_MISSTATEMENT" if gp_var > pm else "SIGNIFICANT_DEFICIENCY",
+                "impact_amount": gp_var,
+                "status": "OPEN",
+                "remediation": "Reconcile reported cost of goods sold and revenue line items against product billing schedules."
+            })
+            exc_id_counter += 1
+
+        if inc.get("pbt_status") == "MISMATCH":
+            pbt_rep = inc.get("pbt", 0.0) or inc.get("ebt", 0.0) or 0.0
+            pbt_calc = inc.get("pbt_calculated", 0.0) or 0.0
+            pbt_var = abs(inc.get("pbt_variance", 0.0) or (pbt_rep - pbt_calc))
+            exceptions.append({
+                "exception_id": f"EXC-{exc_id_counter:03d}",
+                "category": "RECONCILIATION_FAILURE",
+                "audit_area": "Pre-Tax Earnings Arithmetic",
+                "issue_title": "Profit Before Tax (PBT) Subtotal Mismatch",
+                "description": f"Reported PBT ({sym}{pbt_rep:,.2f}) does not equal Operating Profit + Finance Items ({sym}{pbt_calc:,.2f}). Arithmetic variance: {sym}{pbt_var:,.2f}.",
+                "severity": "MATERIAL_MISSTATEMENT" if pbt_var > pm else "SIGNIFICANT_DEFICIENCY",
+                "impact_amount": pbt_var,
+                "status": "OPEN",
+                "remediation": "Verify non-operating expenses, finance income/costs, and exceptional items included in pre-tax earnings."
+            })
+            exc_id_counter += 1
+
+        if inc.get("net_income_reconciliation_status") == "MISMATCH":
+            ni_rep = inc.get("net_income", 0.0) or 0.0
+            ni_calc = inc.get("net_income_calculated", 0.0) or 0.0
+            ni_var = abs(inc.get("net_income_variance", 0.0) or (ni_rep - ni_calc))
+            exceptions.append({
+                "exception_id": f"EXC-{exc_id_counter:03d}",
+                "category": "RECONCILIATION_FAILURE",
+                "audit_area": "Net Income Reconciliation",
+                "issue_title": "Net Profit to PBT Reconciliation Breakdown",
+                "description": f"Reported Net Profit ({sym}{ni_rep:,.2f}) does not reconcile with PBT minus Tax ({sym}{ni_calc:,.2f}). Variance: {sym}{ni_var:,.2f}.",
+                "severity": "MATERIAL_MISSTATEMENT" if ni_var > pm else "SIGNIFICANT_DEFICIENCY",
+                "impact_amount": ni_var,
+                "status": "OPEN",
+                "remediation": "Audit tax expense line items, deferred tax adjustments, and discontinued operations allocations."
+            })
+            exc_id_counter += 1
+
+        # Categorize all exceptions
+        extraction_errors = [e for e in exceptions if e.get("audit_area") in ["Balance Sheet Scope", "Scope Limitation"] or e.get("category") == "EXTRACTION_OR_SCOPE_LIMITATION"]
+        reconciliation_failures = [e for e in exceptions if e.get("category") == "RECONCILIATION_FAILURE"]
+        accounting_inconsistencies = [e for e in exceptions if e.get("audit_area") in ["Balance Sheet Structure", "General Ledger / Trial Balance"]]
+        forensic_observations = [e for e in exceptions if e.get("audit_area") in ["Revenue & Cash Realization", "Forensic Digit Distribution", "Manual Journal Entries"]]
+
         # Compile Management Letter Observations
         mgmt_letter = []
         for exc in exceptions:
             mgmt_letter.append({
                 "ref": exc["exception_id"],
+                "category": exc.get("category", "AUDIT_FINDING"),
                 "area": exc["audit_area"],
                 "deficiency": exc["description"],
                 "risk_implication": "May lead to financial statement misstatement or regulatory audit scrutiny if uncorrected.",
@@ -154,6 +214,14 @@ class AuditExceptionManager:
             "critical_exceptions_count": sum(1 for e in exceptions if e["severity"] == "MATERIAL_MISSTATEMENT"),
             "significant_deficiencies_count": sum(1 for e in exceptions if e["severity"] == "SIGNIFICANT_DEFICIENCY"),
             "control_observations_count": sum(1 for e in exceptions if e["severity"] == "CONTROL_OBSERVATION"),
+            "extraction_errors_count": len(extraction_errors),
+            "reconciliation_failures_count": len(reconciliation_failures),
+            "accounting_inconsistencies_count": len(accounting_inconsistencies),
+            "forensic_observations_count": len(forensic_observations),
             "exception_items": exceptions,
+            "extraction_errors": extraction_errors,
+            "reconciliation_failures": reconciliation_failures,
+            "accounting_inconsistencies": accounting_inconsistencies,
+            "forensic_observations": forensic_observations,
             "management_letter": mgmt_letter
         }

@@ -56,7 +56,7 @@ export default function FileUploader({ onSuccess }: FileUploaderProps) {
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('company_name', companyName || 'Enterprise Company');
+    formData.append('company_name', companyName || '');
 
     try {
       const res = await api.post('/api/upload/', formData, {
@@ -73,19 +73,12 @@ export default function FileUploader({ onSuccess }: FileUploaderProps) {
         }
       });
 
-      setProcessingStage('Normalizing accounting ledgers & computing ratios...');
-      setProgress(85);
+      setProgress(100);
+      setProcessingStage('Finalizing statements & financial intelligence...');
 
-      setTimeout(() => {
-        setProcessingStage('Finalizing statements & financial intelligence...');
-        setProgress(100);
-      }, 400);
-
-      setTimeout(() => {
-        const uploadId = res.data.upload_id;
-        if (onSuccess) onSuccess(uploadId);
-        router.push(`/analysis/${uploadId}`);
-      }, 800);
+      const uploadId = res.data.upload_id;
+      if (onSuccess) onSuccess(uploadId);
+      router.push(`/analysis/${uploadId}`);
     } catch (err: any) {
       setIsUploading(false);
       setProgress(0);

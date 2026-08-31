@@ -1,6 +1,16 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
 import { getAuth, Auth } from "firebase/auth";
-import { getFirestore, doc, setDoc, serverTimestamp, Firestore, initializeFirestore, memoryLocalCache } from "firebase/firestore";
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  serverTimestamp, 
+  Firestore, 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager,
+  memoryLocalCache 
+} from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
 export const firebaseConfig = {
@@ -22,15 +32,25 @@ if (typeof window !== 'undefined') {
   try {
     app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
     auth = getAuth(app);
-    db = initializeFirestore(app, {
-      localCache: memoryLocalCache()
-    });
+    
+    // Use persistent cache with multi-tab support and auto-detect long polling to prevent RPC errors when offline
+    try {
+      db = initializeFirestore(app, {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager()
+        }),
+        experimentalAutoDetectLongPolling: true,
+        ignoreUndefinedProperties: true
+      });
+    } catch {
+      db = getFirestore(app);
+    }
 
     isSupported().then((supported) => {
-      if (supported && app) {
+      if (supported && app && typeof window !== 'undefined' && navigator.onLine) {
         getAnalytics(app);
       }
-    });
+    }).catch(() => {});
   } catch (e) {
     console.warn("Firebase client initialization notice:", e);
   }
@@ -39,6 +59,10 @@ if (typeof window !== 'undefined') {
 export const syncAnalysisToFirestore = async (analysisData: any, userUid?: string) => {
   try {
     if (typeof window === 'undefined' || !db || !analysisData || !analysisData.upload_id) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      console.log("Offline: Skipping remote Firestore sync for upload_id:", analysisData.upload_id);
+      return;
+    }
     const uploadId = String(analysisData.upload_id);
     const docRef = doc(db, "analyses", uploadId);
     

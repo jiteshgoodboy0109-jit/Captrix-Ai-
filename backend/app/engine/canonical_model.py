@@ -158,7 +158,7 @@ def build_canonical_dataset(normalized_items: List[Dict[str, Any]], filename: st
         source_label = str(item.get("source_label") or item.get("account_name", "")).strip()
         val = item.get("net_amount")
         if val is None:
-            val_numeric = 0.0
+            val_numeric = None
             data_state = "NOT_REPORTED"
         elif float(val) == 0.0:
             val_numeric = 0.0

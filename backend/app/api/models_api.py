@@ -14,7 +14,7 @@ from app.auth.jwt import get_current_user, User
 from app.engine.model_registry import get_registered_models, get_model_by_id
 from app.engine.document_profiler import profile_financial_document
 from app.engine.model_evaluator import run_automatic_model_discovery, evaluate_model_extraction
-from app.engine.wipro_benchmark import run_enterprise_golden_benchmark, run_wipro_golden_benchmark, ENTERPRISE_GROUND_TRUTH, CANDIDATE_MODEL_EXTRACTIONS
+from app.engine.enterprise_benchmark import run_enterprise_golden_benchmark, run_wipro_golden_benchmark, ENTERPRISE_GROUND_TRUTH, CANDIDATE_MODEL_EXTRACTIONS
 
 router = APIRouter(prefix="/api/models", tags=["Model Discovery & Evaluation"])
 

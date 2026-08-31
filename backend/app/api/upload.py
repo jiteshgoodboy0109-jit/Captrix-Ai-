@@ -127,7 +127,7 @@ async def upload_financial_file(
             )
             fd_records.append(fd)
         if fd_records:
-            db.add_all(fd_records)
+            db.bulk_save_objects(fd_records)
 
         # 5. Financial Statement Engine
         statements = sanitize_json_data(generate_financial_statements(items))
@@ -268,9 +268,9 @@ async def load_sample_file(
                     "sheet": item.get("sheet", "Sheet1"),
                     "row": item.get("row", 1),
                     "column": item.get("column", "A"),
-                    "year": item.get("year", "Current"),
-                    "unit": item.get("unit", "Units"),
-                    "currency": item.get("currency", "USD"),
+                    "year": item.get("year", "UNKNOWN"),
+                    "unit": item.get("unit", "NOT_DETERMINED"),
+                    "currency": item.get("currency", "NOT_DETERMINED"),
                     "source_sheet": item.get("source_sheet") or item.get("sheet", "Sheet1"),
                     "source_cell": item.get("source_cell") or f"{item.get('column', 'A')}{item.get('row', 1)}",
                     "source_column": item.get("source_column") or item.get("column", "A"),

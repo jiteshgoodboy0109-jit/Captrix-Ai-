@@ -97,24 +97,13 @@ def is_summary_or_total_row(name: str) -> bool:
         return True
     return False
 
-def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: str) -> Dict[str, Any]:
-    """Inspect filename, sheet names, top rows and columns to detect exact Company Name, Currency, and Unit Scale."""
+def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: str, raw_document_text: str = "") -> Dict[str, Any]:
+    """Inspect filename, sheet names, raw document text, top rows and columns to detect exact Company Name, Currency, and Unit Scale."""
     detected_company = ""
     detected_currency = "NOT_DETERMINED"
     detected_unit = "NOT_DETERMINED"
 
     company_candidates = []
-    
-    # 1. Check filename and sheet names first
-    fn_curr, _ = identify_currency(filename, default_iso="NOT_DETERMINED")
-    if fn_curr != "NOT_DETERMINED":
-        detected_currency = fn_curr
-
-    for s_name in sheet_data.keys():
-        s_curr, _ = identify_currency(s_name, default_iso="NOT_DETERMINED")
-        if s_curr != "NOT_DETERMINED":
-            detected_currency = s_curr
-            break
 
     unit_map = [
         ("crore", "Crores"), ("crores", "Crores"), ("cr", "Crores"), ("cr.", "Crores"),
@@ -126,23 +115,66 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
 
     corp_suffix_regex = r'\b(LTD|LIMITED|PROPRIETARY LIMITED|PTY LTD|\(PTY\) LTD|PVT LTD|PRIVATE LIMITED|INC\b|CORP\b|CORPORATION|LLC|GROUP|HOLDINGS|PLC)\b'
 
+    # 1. First scan full raw document text if provided (highest fidelity for PDFs, DOCX, headers)
+    if raw_document_text:
+        doc_curr, _ = identify_currency(raw_document_text, default_iso="NOT_DETERMINED")
+        if doc_curr != "NOT_DETERMINED":
+            detected_currency = doc_curr
+
+        raw_lower = raw_document_text.lower()
+        for kw, u in unit_map:
+            if re.search(r'\b' + re.escape(kw) + r'\b', raw_lower):
+                detected_unit = u
+                break
+
+        # Check for company names in raw document lines
+        for line in raw_document_text.splitlines()[:50]:
+            line_str = line.strip()
+            if not line_str or len(line_str) > 90:
+                continue
+            m_label = re.search(r'(?:company|entity|corporate|organization)\s*(?:name)?\s*[:\-]\s*([A-Za-z0-9\s.,()]+)', line_str, re.IGNORECASE)
+            if m_label:
+                cand = m_label.group(1).strip()
+                if cand and len(cand) < 80:
+                    company_candidates.append(cand)
+            elif re.search(corp_suffix_regex, line_str, re.IGNORECASE):
+                cleaned = re.sub(r'[\(\)\[\]]', '', line_str).strip()
+                if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss", "income", "expense", "revenue", "cost", "asset", "liability", "operations", "notes to"]):
+                    company_candidates.append(cleaned)
+
+    # 2. Check filename and sheet names
+    if detected_currency == "NOT_DETERMINED":
+        fn_curr, _ = identify_currency(filename, default_iso="NOT_DETERMINED")
+        if fn_curr != "NOT_DETERMINED":
+            detected_currency = fn_curr
+
+    if detected_currency == "NOT_DETERMINED":
+        for s_name in sheet_data.keys():
+            s_curr, _ = identify_currency(s_name, default_iso="NOT_DETERMINED")
+            if s_curr != "NOT_DETERMINED":
+                detected_currency = s_curr
+                break
+
+    # 3. Check sheet data headers and rows
     for sheet_name, df in sheet_data.items():
         if df.empty:
             continue
         
-        # Scan columns first
+        # Scan columns
         for col in df.columns:
             col_str = str(col).strip()
             col_lower = col_str.lower()
             
-            iso_found, _ = identify_currency(col_str, filename)
-            if iso_found != "NOT_DETERMINED":
-                detected_currency = iso_found
+            if detected_currency == "NOT_DETERMINED":
+                iso_found, _ = identify_currency(col_str, default_iso="NOT_DETERMINED")
+                if iso_found != "NOT_DETERMINED":
+                    detected_currency = iso_found
 
-            for kw, u in unit_map:
-                if re.search(r'\b' + re.escape(kw) + r'\b', col_lower):
-                    detected_unit = u
-                    break
+            if detected_unit == "NOT_DETERMINED":
+                for kw, u in unit_map:
+                    if re.search(r'\b' + re.escape(kw) + r'\b', col_lower):
+                        detected_unit = u
+                        break
                     
             m_label = re.search(r'(?:company|entity|corporate|organization)\s*(?:name)?\s*[:\-]\s*([A-Za-z0-9\s.,()]+)', col_str, re.IGNORECASE)
             if m_label:
@@ -155,8 +187,8 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
                 if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss", "income", "expense", "revenue", "cost", "asset", "liability"]):
                     company_candidates.append(cleaned)
         
-        # Scan top 30 rows
-        top_slice = df.iloc[:30]
+        # Scan top 50 rows
+        top_slice = df.iloc[:50]
         for _, row in top_slice.iterrows():
             for cell in row.values:
                 if pd.isna(cell):
@@ -164,26 +196,26 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
                 cell_str = str(cell).strip()
                 cell_lower = cell_str.lower()
                 
-                # Check currency strictly with word-boundary regex
-                iso_found, _ = identify_currency(cell_str, filename)
-                if iso_found != "NOT_DETERMINED":
-                    detected_currency = iso_found
+                # Check currency
+                if detected_currency == "NOT_DETERMINED":
+                    iso_found, _ = identify_currency(cell_str, default_iso="NOT_DETERMINED")
+                    if iso_found != "NOT_DETERMINED":
+                        detected_currency = iso_found
                         
                 # Check unit scale
-                for kw, u in unit_map:
-                    if re.search(r'\b' + re.escape(kw) + r'\b', cell_lower):
-                        detected_unit = u
-                        break
+                if detected_unit == "NOT_DETERMINED":
+                    for kw, u in unit_map:
+                        if re.search(r'\b' + re.escape(kw) + r'\b', cell_lower):
+                            detected_unit = u
+                            break
                         
                 # Check Company Name candidates
-                # 1. Look for explicit labels
                 m_label = re.search(r'(?:company|entity|corporate|organization)\s*(?:name)?\s*[:\-]\s*([A-Za-z0-9\s.,()]+)', cell_str, re.IGNORECASE)
                 if m_label:
                     cand = m_label.group(1).strip()
                     if cand and len(cand) < 80:
                         company_candidates.append(cand)
                 
-                # 2. Look for suffixes with word boundaries
                 if re.search(corp_suffix_regex, cell_str, re.IGNORECASE):
                     cleaned = re.sub(r'[\(\)\[\]]', '', cell_str).strip()
                     if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss", "income", "expense", "revenue", "cost", "asset", "liability", "operations"]):
@@ -201,7 +233,7 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
         if words:
             detected_company = " ".join(words)
         else:
-            detected_company = cleaned.title() or "Enterprise Entity"
+            detected_company = cleaned.title() or "NOT_DETERMINED"
 
     return {
         "company_name": detected_company,
@@ -248,15 +280,12 @@ def is_non_financial_header(name: str) -> bool:
         
     section_patterns = [
         r"^assets\s*(million|billion|in\s*cr|in\s*lakhs|in\s*thousands)?$",
-        r"^liabilities\s*(&|\+|and)\s*equity\s*(million|billion|in\s*cr|in\s*lakhs)?$",
-        r"^particulars\s*(million|billion|in\s*cr|in\s*lakhs)?$",
-        r"^.*fy\d{2,4}\s*(balance sheet|profit & loss|income statement|financial statements|financial position).*$",
-        r"^balance\s+at\s+(april|march|january|december).*$",
-        r"^figures\s+in\s+.*$",
-        r"^page\s+(of|\d+).*$"
+        r"^liabilities\s*(&|and)?\s*equity\s*(million|billion|in\s*cr|in\s*lakhs|in\s*thousands)?$",
+        r"^particulars\s*(million|billion|in\s*cr|in\s*lakhs|in\s*thousands)?$",
+        r"^figures\s*in\s*.*$"
     ]
-    for p in section_patterns:
-        if re.match(p, n):
+    for sp in section_patterns:
+        if re.search(sp, n):
             return True
     return False
 
@@ -285,8 +314,8 @@ def classify_account(name: str, sheet_context: str = "") -> str:
     ]):
         return "CASH_FLOW"
     
-    # Priority classification for Intangibles / Goodwill / Non-Current Assets
-    if any(kw in name_lower for kw in ["goodwill", "intangible", "trademark", "patent", "copyright", "brand", "software", "license"]):
+    # Priority classification for Intangibles / Goodwill / Non-Current Assets / ROU Assets
+    if any(kw in name_lower for kw in ["goodwill", "intangible", "trademark", "patent", "copyright", "brand", "software", "license", "right-of-use", "right of use", "rou asset"]):
         return "ASSET"
         
     # Priority classification for PBT / Operating Income / Profitability Subtotals
@@ -294,43 +323,58 @@ def classify_account(name: str, sheet_context: str = "") -> str:
         return "GROSS_PROFIT"
     if any(re.search(r'\b' + re.escape(kw) + r'\b', name_lower) for kw in ["profit before tax", "pbt", "ebt", "ebit", "profit before taxation", "profit from operations", "operating profit", "operating income"]):
         return "OPERATING_INCOME"
-    if any(re.search(r'\b' + re.escape(kw) + r'\b', name_lower) for kw in ["net profit for the year", "net profit after tax", "net profit", "net income", "profit for the year"]):
+    if any(re.search(r'\b' + re.escape(kw) + r'\b', name_lower) for kw in ["net profit for the year", "net profit after tax", "net profit", "net income", "profit for the year", "profit after taxation"]):
         return "NET_INCOME"
 
     # Priority for Finance/Interest Income vs Finance Cost/Interest Expense
     if any(re.search(r'\b' + re.escape(kw) + r'\b', name_lower) for kw in ["interest received", "interest income", "finance income", "investment income", "dividend income", "interest earned"]):
         return "INTEREST_INCOME"
 
-    # 1. FIRST CHECK EQUITY
+    # 1. FIRST CHECK EQUITY & CAPITAL
     equity_keywords = [
         "common stock", "share capital", "equity share capital", "shareholders equity",
         "shareholders' equity", "shareholder equity", "shareholders’ equity",
         "retained earnings", "retained income", "retained profit", "retained profits",
         "accumulated profit", "accumulated loss", "reserves & retained", "reserves and retained",
-        "reserves", "reserve", "surplus", "owner's equity", "owners equity", "capital stock", "treasury stock", "treasury shares"
+        "reserves", "reserve", "surplus", "owner's equity", "owners equity", "capital stock", "treasury stock", "treasury shares",
+        "non-controlling interest", "non controlling interest", "minority interest"
     ]
-    if any(kw in name_lower for kw in equity_keywords) or (("equity" in name_lower or "capital" in name_lower) and "capital work" not in name_lower and "working capital" not in name_lower and "cost of capital" not in name_lower):
+    if any(kw in name_lower for kw in equity_keywords) or (("equity" in name_lower or "capital" in name_lower) and "capital work" not in name_lower and "working capital" not in name_lower and "cost of capital" not in name_lower and "capital expenditure" not in name_lower):
         if "shares" not in name_lower or "share capital" in name_lower or "equity share capital" in name_lower or "treasury shares" in name_lower:
             return "EQUITY"
     if "capital work" in name_lower or "work in progress" in name_lower or "cwip" in name_lower:
         return "ASSET"
-    if "cash" in name_lower or "bank" in name_lower:
+    if "cash" in name_lower or "bank" in name_lower or "cash equivalents" in name_lower:
         return "CASH_ASSET"
-    if "receivable" in name_lower or "receivables" in name_lower or "debtor" in name_lower or "debtors" in name_lower:
+    if "receivable" in name_lower or "receivables" in name_lower or "debtor" in name_lower or "debtors" in name_lower or "trade balances" in name_lower:
         return "RECEIVABLE_ASSET"
+    if "prepaid" in name_lower or "prepayment" in name_lower or "advance" in name_lower:
+        if "payable" not in name_lower and "liability" not in name_lower:
+            return "ASSET"
     
-    # 2. CHECK INVENTORY (ONLY AFTER EQUITY CHECK)
+    # 2. CHECK COGS vs INVENTORY
+    if any(kw in name_lower for kw in ["cost of goods", "cost of sales", "cost of revenue", "cost of revenues", "cogs", "direct materials", "direct labor", "direct labour", "raw materials consumed", "purchase of stock-in-trade", "purchases of stock in trade"]):
+        return "COGS"
     if "change in inventory" in name_lower or "changes in inventory" in name_lower or "inventory change" in name_lower or "changes in inventories" in name_lower:
         return "COGS"
     if "inventory" in name_lower or "inventories" in name_lower or "inventor" in name_lower or ("stock" in name_lower and not any(eq_term in name_lower for eq_term in ["common stock", "capital stock", "preferred stock", "stock capital", "equity stock", "treasury stock", "treasury shares"])):
         return "INVENTORY_ASSET"
 
-    if "payable" in name_lower or "payables" in name_lower or "creditor" in name_lower or "creditors" in name_lower:
+    # 3. LIABILITIES & DEBT
+    if "deferred tax asset" in name_lower or "tax asset" in name_lower:
+        return "ASSET"
+    if "deferred tax liability" in name_lower or "deferred tax" in name_lower or "tax payable" in name_lower:
+        return "LIABILITY"
+    if "lease liability" in name_lower or "lease liabilities" in name_lower or "lease obligation" in name_lower:
+        return "LIABILITY"
+    if "provision" in name_lower or "provisions" in name_lower:
+        return "LIABILITY"
+    if "payable" in name_lower or "payables" in name_lower or "creditor" in name_lower or "creditors" in name_lower or "accrued expense" in name_lower or "accrued expenses" in name_lower:
         return "PAYABLE_LIABILITY"
-    if "borrowing" in name_lower or "debt" in name_lower or "loan" in name_lower:
+    if "borrowing" in name_lower or "debt" in name_lower or "loan" in name_lower or "debenture" in name_lower or "bonds payable" in name_lower:
         return "DEBT_LIABILITY"
-    if any(kw in name_lower for kw in ["interest received", "interest income", "finance income", "investment income"]):
-        return "INTEREST_INCOME"
+
+    # 4. EXPENSES vs REVENUES
     if "interest" in name_lower or "finance cost" in name_lower or "finance costs" in name_lower or "finance charge" in name_lower or "borrowing cost" in name_lower:
         return "INTEREST_EXPENSE"
     if "depreciation" in name_lower or "amortisation" in name_lower or "amortization" in name_lower or "depr" in name_lower:
@@ -345,12 +389,12 @@ def classify_account(name: str, sheet_context: str = "") -> str:
         return "NET_INCOME"
     if "operating profit" in name_lower or "pbt" in name_lower or "profit before tax" in name_lower:
         return "OPERATING_INCOME"
-    if any(kw in name_lower for kw in ["asset", "assets", "block", "ppe", "property, plant", "property plant"]):
+    if any(kw in name_lower for kw in ["asset", "assets", "block", "ppe", "property, plant", "property plant", "investment", "investments", "land", "building", "machinery", "equipment"]):
         if "deferred tax asset" not in name_lower and "tax asset" not in name_lower:
             return "ASSET"
     if "liability" in name_lower or "liabilities" in name_lower:
         return "PAYABLE_LIABILITY" if "payable" in name_lower else "LIABILITY"
-    if any(kw in name_lower for kw in ["exp", "expense", "selling", "admin", "mfr", "overhead", "cost"]):
+    if any(kw in name_lower for kw in ["exp", "expense", "selling", "admin", "mfr", "overhead", "cost", "employee benefit", "salaries", "wages", "rent", "freight", "marketing", "auditor"]):
         return "EXPENSE"
 
     for acct_type, patterns in ACCOUNT_TYPE_RULES.items():
@@ -517,203 +561,70 @@ def detect_columns(df: pd.DataFrame) -> Dict[str, str]:
     return mapping
 
 from abc import ABC, abstractmethod
+from typing import Tuple, Dict, Any, List
 
 class DocumentAdapter(ABC):
-    """
-    Abstract Base Adapter for extracting structured raw financial tables
-    from distinct file formats (Excel, PDF, CSV, JSON, TXT).
-    """
+    """Abstract Base Adapter for extracting structured tabular financial data and raw document text."""
     @abstractmethod
-    def extract_sheets(self, file_bytes: bytes, filename: str) -> Dict[str, pd.DataFrame]:
+    def extract_sheets_and_text(self, file_bytes: bytes, filename: str) -> Tuple[Dict[str, pd.DataFrame], str]:
         pass
 
-class ExcelAdapter(DocumentAdapter):
     def extract_sheets(self, file_bytes: bytes, filename: str) -> Dict[str, pd.DataFrame]:
+        sheets, _ = self.extract_sheets_and_text(file_bytes, filename)
+        return sheets
+
+class ExcelAdapter(DocumentAdapter):
+    def extract_sheets_and_text(self, file_bytes: bytes, filename: str) -> Tuple[Dict[str, pd.DataFrame], str]:
         sheet_data = {}
+        text_parts = []
         try:
             xls = pd.ExcelFile(io.BytesIO(file_bytes))
             for sheet in xls.sheet_names:
                 try:
-                    sheet_data[sheet] = pd.read_excel(xls, sheet_name=sheet)
+                    df = pd.read_excel(xls, sheet_name=sheet)
+                    sheet_data[sheet] = df
+                    text_parts.append(sheet)
+                    text_parts.extend([str(c) for c in df.columns if pd.notna(c)])
+                    for _, row in df.iloc[:30].iterrows():
+                        text_parts.extend([str(v) for v in row.values if pd.notna(v) and isinstance(v, str)])
                 except Exception:
                     continue
         except Exception:
             pass
-        return sheet_data
+        return sheet_data, "\n".join(text_parts)
 
 class CSVAdapter(DocumentAdapter):
-    def extract_sheets(self, file_bytes: bytes, filename: str) -> Dict[str, pd.DataFrame]:
+    def extract_sheets_and_text(self, file_bytes: bytes, filename: str) -> Tuple[Dict[str, pd.DataFrame], str]:
         try:
-            df = pd.read_csv(io.BytesIO(file_bytes), sep=None, engine='python')
-            return {"Sheet1": df}
-        except Exception:
-            return {}
-
-class PDFAdapter(DocumentAdapter):
-    def extract_sheets(self, file_bytes: bytes, filename: str) -> Dict[str, pd.DataFrame]:
-        records = []
-        try:
-            import pypdf
-            reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-            current_years: List[str] = []
-            
-            for page_idx, page in enumerate(reader.pages):
-                page_text = page.extract_text()
-                if not page_text:
-                    continue
-                lines = page_text.splitlines()
-                header_buffer = ""
-                for line in lines:
-                    line_str = line.strip()
-                    if not line_str:
-                        continue
-                    
-                    # Extract years in appearance order
-                    years_in_line = re.findall(r'\b(?:FY\s*)?(20[1-3][0-9])(?:\s*[-/]\s*(\d{2,4}))?\b', line_str, re.IGNORECASE)
-                    if len(years_in_line) >= 2:
-                        extracted_years = []
-                        for m in years_in_line:
-                            base_yr = m[0]
-                            suff_yr = m[1]
-                            if suff_yr:
-                                full_yr = base_yr[:2] + suff_yr if len(suff_yr) == 2 else suff_yr
-                                extracted_years.append(full_yr)
-                            else:
-                                extracted_years.append(base_yr)
-                        current_years = extracted_years
-                        continue
-                    
-                    tokens = line_str.split()
-                    if len(tokens) < 2:
-                        continue
-                    num_tokens = []
-                    text_tokens = []
-                    for t in reversed(tokens):
-                        t_clean = t.replace("$", "").replace("₹", "").replace("€", "").replace("£", "").replace(",", "").replace("(", "").replace(")", "").strip()
-                        if t_clean in ["—", "–", "-", ""] or (t_clean.replace(".", "", 1).isdigit() and t_clean.replace(".", "", 1) != ""):
-                            num_tokens.insert(0, t)
-                        else:
-                            text_tokens.insert(0, t)
-                    if not num_tokens or not text_tokens:
-                        continue
-                    label = " ".join(text_tokens)
-                    mapped = {}
-                    num_vals = [clean_value(v) for v in num_tokens]
-                    
-                    if current_years:
-                        for i, val in enumerate(num_vals):
-                            if i < len(current_years):
-                                mapped[current_years[i]] = val
-                    else:
-                        for i, val in enumerate(num_vals):
-                            mapped[f"UNKNOWN_PERIOD_{i+1}"] = val
-
-                    records.append({"Particulars": label, **mapped})
-        except Exception:
-            pass
-        if records:
-            return {"Sheet1": pd.DataFrame(records)}
-        return {}
-
-def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
-    sheet_data = {}
-    normalized_items = []
-    detected_sheets = []
-    
-    fname = (filename or "").lower()
-    meta_info = {"company_name": "", "currency": "NOT_DETERMINED", "unit": "NOT_DETERMINED"}
-
-    from app.engine.accounting_adapters import TallyAdapter, QuickBooksAdapter, XeroAdapter
-
-    if TallyAdapter.is_tally_format(file_bytes, filename):
-        tally_sheets = TallyAdapter.parse_tally_xml(file_bytes)
-        if tally_sheets:
-            sheet_data = tally_sheets
-            detected_sheets = list(sheet_data.keys())
-    elif fname.endswith(".csv") or fname.endswith(".tsv"):
-        adapter = CSVAdapter()
-        sheet_data = adapter.extract_sheets(file_bytes, filename)
-        detected_sheets = list(sheet_data.keys())
-    elif fname.endswith(".pdf"):
-        adapter = PDFAdapter()
-        sheet_data = adapter.extract_sheets(file_bytes, filename)
-        detected_sheets = list(sheet_data.keys())
-    else:
-        adapter = ExcelAdapter()
-        sheet_data = adapter.extract_sheets(file_bytes, filename)
-        detected_sheets = list(sheet_data.keys())
-
-    try:
-        if (fname.endswith(".csv") or fname.endswith(".tsv")) and not sheet_data:
+            from app.engine.accounting_adapters import QuickBooksAdapter, XeroAdapter
             df = pd.read_csv(io.BytesIO(file_bytes), sep=None, engine='python')
             if QuickBooksAdapter.is_quickbooks_format(file_bytes, filename):
                 df = QuickBooksAdapter.parse_quickbooks_csv(df)
             elif XeroAdapter.is_xero_format(file_bytes, filename):
                 df = XeroAdapter.parse_xero_csv(df)
-            sheet_data["Sheet1"] = df
-            detected_sheets = ["Sheet1"]
-        elif fname.endswith(".json"):
-            data = json.loads(file_bytes.decode("utf-8"))
-            if isinstance(data, list):
-                df = pd.DataFrame(data)
-                sheet_data["Sheet1"] = df
-                detected_sheets = ["Sheet1"]
-        elif fname.endswith(".txt"):
-            lines = file_bytes.decode("utf-8").splitlines()
-            parsed_lines = []
-            for line in lines:
-                if ":" in line:
-                    parts = line.split(":", 1)
-                    parsed_lines.append({
-                        "account_name": parts[0].strip(),
-                        "amount": parts[1].strip()
-                    })
-            if parsed_lines:
-                df = pd.DataFrame(parsed_lines)
-                sheet_data["Sheet1"] = df
-                detected_sheets = ["Sheet1"]
-        elif fname.endswith(".xlsx") or fname.endswith(".xls") or fname.endswith(".xlsm") or fname.endswith(".xlsb"):
-            xls = pd.ExcelFile(io.BytesIO(file_bytes))
-            detected_sheets = list(xls.sheet_names)
-            for sheet in xls.sheet_names:
-                try:
-                    sheet_data[sheet] = pd.read_excel(xls, sheet_name=sheet)
-                except Exception:
-                    continue
-        elif fname.endswith(".pdf"):
+            text = " ".join([str(c) for c in df.columns] + [str(v) for v in df.iloc[:20].values.flatten() if pd.notna(v)])
+            return {"Sheet1": df}, text
+        except Exception:
+            return {}, ""
+
+class PDFAdapter(DocumentAdapter):
+    def extract_sheets_and_text(self, file_bytes: bytes, filename: str) -> Tuple[Dict[str, pd.DataFrame], str]:
+        records = []
+        text_lines = []
+        try:
             import pypdf
             reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-            records = []
-            
-            fs_indicators = [
-                "consolidated statements of income",
-                "consolidated statement of income",
-                "consolidated balance sheets",
-                "consolidated balance sheet",
-                "consolidated statements of financial position",
-                "consolidated statement of financial position",
-                "consolidated statements of cash flows",
-                "consolidated statement of cash flows",
-                "income statement",
-                "balance sheet"
-            ]
-            
             current_years: List[str] = []
             
-            for page_idx, page in enumerate(reader.pages):
+            for page in reader.pages:
                 page_text = page.extract_text()
                 if not page_text:
                     continue
-                
-                page_text_lower = page_text.lower()
-                if not any(ind in page_text_lower for ind in fs_indicators):
-                    continue
-                
-                lines = page_text.splitlines()
-                for line in lines:
+                for line in page_text.splitlines():
                     line_str = line.strip()
                     if not line_str:
                         continue
+                    text_lines.append(line_str)
                     
                     years_in_line = re.findall(r'\b(?:FY\s*)?(20[1-3][0-9])(?:\s*[-/]\s*(\d{2,4}))?\b', line_str, re.IGNORECASE)
                     if len(years_in_line) >= 2:
@@ -721,18 +632,14 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                         for m in years_in_line:
                             base_yr = m[0]
                             suff_yr = m[1]
-                            if suff_yr:
-                                full_yr = base_yr[:2] + suff_yr if len(suff_yr) == 2 else suff_yr
-                                extracted_years.append(full_yr)
-                            else:
-                                extracted_years.append(base_yr)
+                            full_yr = base_yr[:2] + suff_yr if (suff_yr and len(suff_yr) == 2) else (suff_yr or base_yr)
+                            extracted_years.append(full_yr)
                         current_years = extracted_years
                         continue
                     
                     tokens = line_str.split()
                     if len(tokens) < 2:
                         continue
-                    
                     num_tokens = []
                     text_tokens = []
                     for t in reversed(tokens):
@@ -744,50 +651,45 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                                 num_tokens.insert(0, t)
                         else:
                             text_tokens.insert(0, t)
-                            
                     if not num_tokens or not text_tokens:
                         continue
-                        
                     label = " ".join(text_tokens)
-                    if label.lower() in ["particulars", "notes", "notes:", "as at", "year ended", "notes as at", "description", "account name"]:
+                    if label.lower() in ["particulars", "notes", "notes:", "as at", "year ended", "description", "account name", "item"]:
                         continue
-                        
-                    if len(text_tokens) > 1:
-                        last_tok = text_tokens[-1]
-                        if last_tok.isdigit() and int(last_tok) <= 45:
-                            label = " ".join(text_tokens[:-1])
-                            
+                    if len(text_tokens) > 1 and text_tokens[-1].isdigit() and int(text_tokens[-1]) <= 45:
+                        label = " ".join(text_tokens[:-1])
+
                     mapped = {}
-                    num_vals = [clean_value(v) for v in num_tokens]
-                    
-                    if len(num_vals) <= len(current_years):
-                        for i, val in enumerate(num_vals):
-                            yr_idx = len(current_years) - len(num_vals) + i
-                            mapped[current_years[yr_idx]] = val
+                    num_vals = [clean_value_or_none(v) for v in num_tokens]
+                    if current_years:
+                        if len(num_vals) <= len(current_years):
+                            for i, val in enumerate(num_vals):
+                                yr_idx = len(current_years) - len(num_vals) + i
+                                mapped[current_years[yr_idx]] = val
+                        else:
+                            for i in range(len(current_years)):
+                                mapped[current_years[i]] = num_vals[i]
                     else:
-                        for i in range(len(current_years)):
-                            mapped[current_years[i]] = num_vals[i]
-                            
-                    records.append({
-                        "Particulars": label,
-                        **mapped
-                    })
-            
-            if records:
-                df = pd.DataFrame(records)
-                sheet_data["Sheet1"] = df
-                detected_sheets = ["Sheet1"]
-        elif fname.endswith(".docx"):
+                        for i, val in enumerate(num_vals):
+                            mapped[f"Col_{i+1}"] = val
+                    records.append({"Particulars": label, **mapped})
+        except Exception:
+            pass
+        sheet_data = {"Sheet1": pd.DataFrame(records)} if records else {}
+        return sheet_data, "\n".join(text_lines)
+
+class DOCXAdapter(DocumentAdapter):
+    def extract_sheets_and_text(self, file_bytes: bytes, filename: str) -> Tuple[Dict[str, pd.DataFrame], str]:
+        records = []
+        text_lines = []
+        try:
             import docx
             doc = docx.Document(io.BytesIO(file_bytes))
-            records = []
             current_years: List[str] = []
             
-            text_lines = []
             for p in doc.paragraphs:
                 if p.text.strip():
                     text_lines.append(p.text.strip())
-            
             for table in doc.tables:
                 for row in table.rows:
                     row_text = "  ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
@@ -798,25 +700,19 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                 line_str = line.strip()
                 if not line_str:
                     continue
-                
                 years_in_line = re.findall(r'\b(?:FY\s*)?(20[1-3][0-9])(?:\s*[-/]\s*(\d{2,4}))?\b', line_str, re.IGNORECASE)
                 if len(years_in_line) >= 2:
                     extracted_years = []
                     for m in years_in_line:
                         base_yr = m[0]
                         suff_yr = m[1]
-                        if suff_yr:
-                            full_yr = base_yr[:2] + suff_yr if len(suff_yr) == 2 else suff_yr
-                            extracted_years.append(full_yr)
-                        else:
-                            extracted_years.append(base_yr)
+                        full_yr = base_yr[:2] + suff_yr if (suff_yr and len(suff_yr) == 2) else (suff_yr or base_yr)
+                        extracted_years.append(full_yr)
                     current_years = extracted_years
                     continue
-                
                 tokens = line_str.split()
                 if len(tokens) < 2:
                     continue
-                
                 num_tokens = []
                 text_tokens = []
                 for t in reversed(tokens):
@@ -828,65 +724,45 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                             num_tokens.insert(0, t)
                     else:
                         text_tokens.insert(0, t)
-                        
                 if not num_tokens or not text_tokens:
                     continue
-                    
                 label = " ".join(text_tokens)
-                if label.lower() in ["particulars", "notes", "notes:", "as at", "year ended", "notes as at", "description", "account name"]:
+                if label.lower() in ["particulars", "notes", "notes:", "as at", "year ended", "description", "account name"]:
                     continue
-                    
-                if len(text_tokens) > 1:
-                    last_tok = text_tokens[-1]
-                    if last_tok.isdigit() and int(last_tok) <= 45:
-                        label = " ".join(text_tokens[:-1])
-                        
                 mapped = {}
-                num_vals = [clean_value(v) for v in num_tokens]
-                
-                if len(num_vals) <= len(current_years):
+                num_vals = [clean_value_or_none(v) for v in num_tokens]
+                if current_years and len(num_vals) <= len(current_years):
                     for i, val in enumerate(num_vals):
                         yr_idx = len(current_years) - len(num_vals) + i
                         mapped[current_years[yr_idx]] = val
                 else:
-                    for i in range(len(current_years)):
-                        mapped[current_years[i]] = num_vals[i]
-                        
-                records.append({
-                    "Particulars": label,
-                    **mapped
-                })
-                
-            if records:
-                df = pd.DataFrame(records)
-                sheet_data["Sheet1"] = df
-                detected_sheets = ["Sheet1"]
-        elif fname.endswith(".pptx") or fname.endswith(".ppt"):
-            import zipfile
-            import xml.etree.ElementTree as ET
-            records = []
-            current_years: List[str] = []
-            text_lines = []
-            try:
-                with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
-                    slide_names = [n for n in z.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")]
-                    for sname in sorted(slide_names):
-                        xml_content = z.read(sname)
-                        root = ET.fromstring(xml_content)
-                        for tr in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}tr'):
-                            row_cells = []
-                            for tc in tr.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}tc'):
-                                cell_texts = [t.text for t in tc.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}t') if t.text]
-                                row_cells.append(" ".join(cell_texts).strip())
-                            if any(row_cells):
-                                text_lines.append("  ".join(row_cells))
-                        for p in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}p'):
-                            p_texts = [t.text for t in p.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}t') if t.text]
-                            if p_texts:
-                                text_lines.append(" ".join(p_texts).strip())
-            except Exception:
-                pass
+                    for i in range(len(current_years) if current_years else len(num_vals)):
+                        mapped[current_years[i] if current_years else f"Col_{i+1}"] = num_vals[i] if i < len(num_vals) else None
+                records.append({"Particulars": label, **mapped})
+        except Exception:
+            pass
+        sheet_data = {"Sheet1": pd.DataFrame(records)} if records else {}
+        return sheet_data, "\n".join(text_lines)
 
+class PPTXAdapter(DocumentAdapter):
+    def extract_sheets_and_text(self, file_bytes: bytes, filename: str) -> Tuple[Dict[str, pd.DataFrame], str]:
+        records = []
+        text_lines = []
+        try:
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+                slide_names = [n for n in z.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")]
+                for sname in sorted(slide_names):
+                    xml_content = z.read(sname)
+                    root = ET.fromstring(xml_content)
+                    for tr in root.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}tr'):
+                        row_cells = []
+                        for tc in tr.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}tc'):
+                            text = "".join(t.text for t in tc.iter('{http://schemas.openxmlformats.org/drawingml/2006/main}t') if t.text).strip()
+                            if text:
+                                row_cells.append(text)
+                        if row_cells:
+                            text_lines.append("  ".join(row_cells))
+            current_years = []
             for line in text_lines:
                 line_str = line.strip()
                 if not line_str:
@@ -897,14 +773,10 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                     for m in years_in_line:
                         base_yr = m[0]
                         suff_yr = m[1]
-                        if suff_yr:
-                            full_yr = base_yr[:2] + suff_yr if len(suff_yr) == 2 else suff_yr
-                            extracted_years.append(full_yr)
-                        else:
-                            extracted_years.append(base_yr)
+                        full_yr = base_yr[:2] + suff_yr if (suff_yr and len(suff_yr) == 2) else (suff_yr or base_yr)
+                        extracted_years.append(full_yr)
                     current_years = extracted_years
                     continue
-
                 tokens = line_str.split()
                 if len(tokens) < 2:
                     continue
@@ -919,37 +791,88 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                             num_tokens.insert(0, t)
                     else:
                         text_tokens.insert(0, t)
-
                 if not num_tokens or not text_tokens:
                     continue
-
                 label = " ".join(text_tokens)
-                if label.lower() in ["particulars", "notes", "notes:", "as at", "year ended", "description", "account name"]:
-                    continue
-
                 mapped = {}
-                num_vals = [clean_value(v) for v in num_tokens]
-                if len(num_vals) <= len(current_years):
-                    for i, val in enumerate(num_vals):
-                        yr_idx = len(current_years) - len(num_vals) + i
-                        mapped[current_years[yr_idx]] = val
-                else:
-                    for i in range(len(current_years)):
-                        mapped[current_years[i]] = num_vals[i]
-
+                num_vals = [clean_value_or_none(v) for v in num_tokens]
+                for i in range(len(current_years) if current_years else len(num_vals)):
+                    mapped[current_years[i] if current_years else f"Col_{i+1}"] = num_vals[i] if i < len(num_vals) else None
                 records.append({"Particulars": label, **mapped})
+        except Exception:
+            pass
+        sheet_data = {"Sheet1": pd.DataFrame(records)} if records else {}
+        return sheet_data, "\n".join(text_lines)
 
-            if records:
-                df = pd.DataFrame(records)
-                sheet_data["Sheet1"] = df
-                detected_sheets = ["Sheet1"]
-    except Exception as e:
-        print(f"Document read error for {filename}: {e}")
+class TXTAdapter(DocumentAdapter):
+    def extract_sheets_and_text(self, file_bytes: bytes, filename: str) -> Tuple[Dict[str, pd.DataFrame], str]:
+        parsed_lines = []
+        raw_text = file_bytes.decode("utf-8", errors="ignore")
+        for line in raw_text.splitlines():
+            if ":" in line:
+                parts = line.split(":", 1)
+                parsed_lines.append({
+                    "Particulars": parts[0].strip(),
+                    "Amount": clean_value_or_none(parts[1].strip())
+                })
+        sheet_data = {"Sheet1": pd.DataFrame(parsed_lines)} if parsed_lines else {}
+        return sheet_data, raw_text
 
+class JSONAdapter(DocumentAdapter):
+    def extract_sheets_and_text(self, file_bytes: bytes, filename: str) -> Tuple[Dict[str, pd.DataFrame], str]:
+        try:
+            data = json.loads(file_bytes.decode("utf-8"))
+            if isinstance(data, list):
+                df = pd.DataFrame(data)
+                return {"Sheet1": df}, json.dumps(data)
+            elif isinstance(data, dict):
+                df = pd.DataFrame([data])
+                return {"Sheet1": df}, json.dumps(data)
+        except Exception:
+            pass
+        return {}, ""
+
+def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
+    sheet_data = {}
+    normalized_items = []
+    raw_document_text = ""
+    
+    fname = (filename or "").lower()
+
+    meta_info = {"company_name": "", "currency": "NOT_DETERMINED", "unit": "NOT_DETERMINED"}
+
+    from app.engine.accounting_adapters import TallyAdapter
+
+    if TallyAdapter.is_tally_format(file_bytes, filename):
+        sheet_data = TallyAdapter.parse_tally_xml(file_bytes) or {}
+        raw_document_text = file_bytes[:5000].decode("utf-8", errors="ignore")
+    elif fname.endswith(".json"):
+        adapter = JSONAdapter()
+        sheet_data, raw_document_text = adapter.extract_sheets_and_text(file_bytes, filename)
+    elif fname.endswith(".csv") or fname.endswith(".tsv"):
+        adapter = CSVAdapter()
+        sheet_data, raw_document_text = adapter.extract_sheets_and_text(file_bytes, filename)
+    elif fname.endswith(".pdf"):
+        adapter = PDFAdapter()
+        sheet_data, raw_document_text = adapter.extract_sheets_and_text(file_bytes, filename)
+    elif fname.endswith(".docx"):
+        adapter = DOCXAdapter()
+        sheet_data, raw_document_text = adapter.extract_sheets_and_text(file_bytes, filename)
+    elif fname.endswith(".pptx") or fname.endswith(".ppt"):
+        adapter = PPTXAdapter()
+        sheet_data, raw_document_text = adapter.extract_sheets_and_text(file_bytes, filename)
+    elif fname.endswith(".txt"):
+        adapter = TXTAdapter()
+        sheet_data, raw_document_text = adapter.extract_sheets_and_text(file_bytes, filename)
+    else:
+        adapter = ExcelAdapter()
+        sheet_data, raw_document_text = adapter.extract_sheets_and_text(file_bytes, filename)
+
+    detected_sheets = list(sheet_data.keys())
     SKIP_SHEETS = ["customization", "parameters", "template", "setup", "config", "instruction", "instructions", "notes", "readme"]
 
     if sheet_data:
-        meta_info = detect_company_and_currency(sheet_data, filename)
+        meta_info = detect_company_and_currency(sheet_data, filename, raw_document_text)
 
         for sheet_name, df in sheet_data.items():
             if any(skip_kw in sheet_name.lower().strip() for skip_kw in SKIP_SHEETS):
@@ -1127,8 +1050,13 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                             row_num = int(idx) + 1 if isinstance(idx, (int, float)) else 1
                             src_cell = f"{col_letter}{row_num}"
 
+                            local_col_curr, _ = identify_currency(raw_hdr, default_iso="NOT_DETERMINED")
+                            local_row_curr, _ = identify_currency(acct_name, default_iso=local_col_curr)
+                            local_sheet_curr, _ = identify_currency(sheet_name, default_iso=local_row_curr)
+                            item_currency = local_sheet_curr if local_sheet_curr != "NOT_DETERMINED" else meta_info["currency"]
+
                             normalized_items.append({
-                                "company": meta_info.get("company_name") or meta_info.get("company") or "Enterprise Entity",
+                                "company": meta_info.get("company_name") or meta_info.get("company") or "NOT_DETERMINED",
                                 "account_code": f"{sheet_name}-{idx}-{year}",
                                 "account_name": acct_name,
                                 "account_type": acct_type or "UNCLASSIFIED",
@@ -1157,7 +1085,7 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                                 "column": col_letter,
                                 "year": year,
                                 "unit": meta_info["unit"],
-                                "currency": meta_info["currency"],
+                                "currency": item_currency,
                                 "source_document": filename,
                                 "source_page": 1,
                                 "source_table": stmt_type,

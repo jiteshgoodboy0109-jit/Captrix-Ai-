@@ -115,10 +115,19 @@ class IndependentVerifier:
             elif not source_candidates and concept == "TOTAL_EQUITY":
                 source_candidates = source_evidence_by_concept.get("EQUITY", [])
 
+            # Check if line item has an explicit arithmetic mismatch in statement calculations
+            item_has_arithmetic_mismatch = False
+            if concept == "GROSS_PROFIT" and inc.get("gross_profit_status") == "MISMATCH":
+                item_has_arithmetic_mismatch = True
+            elif concept == "PBT" and inc.get("pbt_status") == "MISMATCH":
+                item_has_arithmetic_mismatch = True
+            elif concept == "NET_PROFIT" and inc.get("net_income_reconciliation_status") == "MISMATCH":
+                item_has_arithmetic_mismatch = True
+
             if not source_candidates:
                 # Value was output, but direct source evidence wasn't indexed by that exact concept name
                 # Check if it was derived from valid sub-items
-                if concept in ["GROSS_PROFIT", "TOTAL_ASSETS", "TOTAL_LIABILITIES", "TOTAL_EQUITY"]:
+                if concept in ["GROSS_PROFIT", "TOTAL_ASSETS", "TOTAL_LIABILITIES", "TOTAL_EQUITY"] and not item_has_arithmetic_mismatch:
                     verification_records.append({
                         "concept": concept,
                         "output_value": output_val,
@@ -127,6 +136,18 @@ class IndependentVerifier:
                         "source_location": "DERIVED_FROM_SOURCE_LINE_ITEMS",
                         "value_match": True,
                         "status": "DERIVED_FROM_VALID_SOURCE"
+                    })
+                elif item_has_arithmetic_mismatch:
+                    has_critical_mismatch = True
+                    all_matches_pass = False
+                    verification_records.append({
+                        "concept": concept,
+                        "output_value": output_val,
+                        "source_evidence_found": False,
+                        "raw_source_value": None,
+                        "source_location": None,
+                        "value_match": False,
+                        "status": "MISMATCH"
                     })
                 else:
                     unsupported_facts.append(concept)
@@ -150,18 +171,18 @@ class IndependentVerifier:
             src_loc = f"{src_sheet}!{src_cell}"
 
             val_matches = False
-            if raw_val is not None and output_val is not None:
+            if not item_has_arithmetic_mismatch and raw_val is not None and output_val is not None:
                 try:
                     val_matches = math.isclose(abs(float(raw_val)), abs(float(output_val)), rel_tol=0.01, abs_tol=1.0)
                 except (ValueError, TypeError):
                     val_matches = str(raw_val) == str(output_val)
 
-            if not val_matches and concept in ["TOTAL_REVENUE", "REVENUE"] and len(source_candidates) > 1:
+            if not val_matches and not item_has_arithmetic_mismatch and concept in ["TOTAL_REVENUE", "REVENUE"] and len(source_candidates) > 1:
                 # Sum of multiple revenue lines
                 sum_src = sum(abs(float(c.get("canonical_value") or c.get("net_amount") or 0.0)) for c in source_candidates)
                 val_matches = math.isclose(sum_src, abs(float(output_val)), rel_tol=0.01, abs_tol=1.0)
 
-            if not val_matches:
+            if not val_matches or item_has_arithmetic_mismatch:
                 has_critical_mismatch = True
                 all_matches_pass = False
 
@@ -171,8 +192,8 @@ class IndependentVerifier:
                 "source_evidence_found": True,
                 "raw_source_value": raw_val,
                 "source_location": src_loc,
-                "value_match": val_matches,
-                "status": "VERIFIED" if val_matches else "MISMATCH"
+                "value_match": val_matches and not item_has_arithmetic_mismatch,
+                "status": "VERIFIED" if (val_matches and not item_has_arithmetic_mismatch) else "MISMATCH"
             })
 
         # Determine the 3 Truthful Statuses

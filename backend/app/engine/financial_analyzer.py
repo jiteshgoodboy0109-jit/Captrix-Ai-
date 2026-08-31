@@ -284,7 +284,35 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     # 4. Efficiency Ratios
-    inv_t_res = safe_ratio(cogs, inv)
+    # Strict Average Inventory requirement: Suppress inventory turnover unless both opening and closing inventory are available
+    opening_inv = bs.get("opening_inventory") if isinstance(bs, dict) else None
+    if opening_inv is None and isinstance(statements, dict):
+        opening_inv = statements.get("opening_inventory")
+    closing_inv = inv
+
+    if opening_inv is not None and closing_inv is not None and (float(opening_inv) + float(closing_inv)) > 0:
+        avg_inv = (float(opening_inv) + float(closing_inv)) / 2.0
+        if avg_inv is not None and cogs is not None and avg_inv > 0 and cogs > 0:
+            inv_t_res = safe_ratio(cogs, avg_inv)
+        elif cogs == 0.0 or (cogs is not None and cogs <= 0):
+            inv_t_res = {
+                "value": None,
+                "display_value": "Ratio Not Calculable — Missing / Zero COGS (Denominator = 0 or COGS = 0)",
+                "is_calculable": False
+            }
+        else:
+            inv_t_res = {
+                "value": None,
+                "display_value": "Ratio Not Calculable — Average Inventory (Opening + Closing) Missing / Not Available",
+                "is_calculable": False
+            }
+    else:
+        inv_t_res = {
+            "value": None,
+            "display_value": "Ratio Not Calculable — Average Inventory (Opening + Closing) Missing / Not Available",
+            "is_calculable": False
+        }
+
     rec_t_res = safe_ratio(rev, rec)
     asset_t_res = safe_ratio(rev, total_assets)
 
@@ -299,10 +327,15 @@ def calculate_financial_ratios(statements: Dict[str, Any]) -> Dict[str, Any]:
             "display_value": inv_t_res["display_value"],
             "is_calculable": inv_t_res["is_calculable"],
             "formula": "COGS / Average Inventory",
-            "inputs": {"COGS": cogs, "Inventory": inv},
+            "inputs": {
+                "COGS": cogs,
+                "Closing Inventory": closing_inv,
+                "Opening Inventory": opening_inv,
+                "Average Inventory": ((float(opening_inv) + float(closing_inv)) / 2.0) if (opening_inv is not None and closing_inv is not None) else None
+            },
             "benchmark": "4.0 - 8.0x",
             "status": ("HEALTHY" if inv_t_val >= 4.0 else "WARNING") if inv_t_val is not None else "NOT_CALCULABLE",
-            "interpretation": f"Inventory is restocked and sold {inv_t_val:.1f} times per year." if inv_t_val is not None else "Ratio Not Calculable — Required Source Data Missing"
+            "interpretation": f"Inventory is restocked and sold {inv_t_val:.1f} times per year." if inv_t_val is not None else "Ratio Not Calculable — Average inventory requires both opening and closing inventory data. Single-period closing inventory cannot be substituted."
         },
         "receivable_turnover": {
             "name": "Receivables Turnover",

@@ -10,8 +10,8 @@ import os
 def profile_financial_document(
     sheet_data: Dict[str, Any], 
     filename: str = "", 
-    detected_currency: str = "USD", 
-    detected_unit: str = "Units"
+    detected_currency: str = "NOT_DETERMINED", 
+    detected_unit: str = "NOT_DETERMINED"
 ) -> Dict[str, Any]:
     """Generate detailed document profile for candidate model capability matching."""
     ext = os.path.splitext(filename)[1].lower() if filename else ".xlsx"
