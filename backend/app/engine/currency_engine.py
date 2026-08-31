@@ -115,8 +115,7 @@ def get_exchange_rate(source_curr: str, target_curr: str, year: str = "2026") ->
     if source_curr in ["NOT_DETERMINED", "UNKNOWN"] or target_curr in ["NOT_DETERMINED", "UNKNOWN"]:
         return None
 
-    yr_str = str(year)
-    yr = yr_str if yr_str in HISTORICAL_USD_RATES else "2026"
+    yr = year if year in HISTORICAL_USD_RATES else "2026"
     rates = HISTORICAL_USD_RATES[yr]
 
     if source_curr not in rates or target_curr not in rates:

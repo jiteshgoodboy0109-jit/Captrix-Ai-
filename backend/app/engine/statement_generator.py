@@ -407,7 +407,8 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         "equity_status": equity_status
     }
 
-    balance_sheet = {
+    balance_sheet: Dict[str, Any] = {
+        "status": "NOT_REPORTED",
         "current_assets": {
             "cash": round(cash_and_equivalents, 2) if cash_and_equivalents is not None else None,
             "petty_cash": round(petty_cash, 2) if petty_cash is not None else None,
@@ -626,8 +627,18 @@ def generate_financial_statements(items: List[Dict[str, Any]]) -> Dict[str, Any]
             "validation_report": {"balance_sheet_check": "FAIL", "reason": "No financial items extracted."}
         }
 
-    # Group items by fiscal year
-    f_years = list(set(str(i.get("fiscal_year") or (f"FY{i.get('year')}" if i.get("year") and i.get("year") != "UNKNOWN" else "UNKNOWN")) for i in items))
+    # Helper to resolve clean fiscal year label for an item
+    def _item_fy(item: Dict[str, Any]) -> str:
+        fy = item.get("fiscal_year")
+        if fy and str(fy).strip() and str(fy).strip() not in ["None", "UNKNOWN", "Current", ""]:
+            return str(fy).strip()
+        yr = item.get("year")
+        if yr and str(yr).strip() and str(yr).strip() not in ["None", "UNKNOWN", "Current", ""]:
+            yr_clean = str(yr).strip()
+            return f"FY{yr_clean}" if not yr_clean.startswith("FY") else yr_clean
+        return "UNKNOWN"
+
+    f_years = list(set(_item_fy(i) for i in items))
     if not f_years:
         f_years = ["UNKNOWN"]
         
@@ -636,7 +647,7 @@ def generate_financial_statements(items: List[Dict[str, Any]]) -> Dict[str, Any]
         return int(digits) if digits else 0
 
     annual_items = [i for i in items if not i.get("is_quarterly", False) and (i.get("period_type") or "ANNUAL") == "ANNUAL"]
-    annual_f_years = list(set(str(i.get("fiscal_year") or (f"FY{i.get('year')}" if i.get("year") and i.get("year") != "UNKNOWN" else "UNKNOWN")) for i in annual_items)) if annual_items else []
+    annual_f_years = list(set(_item_fy(i) for i in annual_items)) if annual_items else []
 
     sorted_fyrs = sorted(annual_f_years if annual_f_years else f_years, key=_fy_key)
     target_fyr = sorted_fyrs[-1] if sorted_fyrs else "UNKNOWN"
@@ -645,18 +656,18 @@ def generate_financial_statements(items: List[Dict[str, Any]]) -> Dict[str, Any]
     for fyr in sorted_fyrs:
         yr_items = [
             i for i in items 
-            if (str(i.get("fiscal_year")) == fyr or str(i.get("period_label")) == fyr or (i.get("year") and str(i.get("year")) == fyr.replace("FY", "")))
+            if (_item_fy(i) == fyr or str(i.get("period_label")) == fyr or (i.get("year") and str(i.get("year")) == fyr.replace("FY", "")))
             and not i.get("is_quarterly", False) 
             and (i.get("period_type") or "ANNUAL") == "ANNUAL"
         ]
         if not yr_items:
-            yr_items = [i for i in items if str(i.get("fiscal_year")) == fyr or (i.get("year") and str(i.get("year")) == fyr.replace("FY", ""))]
+            yr_items = [i for i in items if _item_fy(i) == fyr or (i.get("year") and str(i.get("year")) == fyr.replace("FY", ""))]
         if not yr_items:
             yr_items = items
         stmt_yr = generate_statements_for_year(yr_items, fyr, f_years)
         by_year[fyr] = stmt_yr
-        clean_yr = fyr.replace("FY", "")
-        if clean_yr and clean_yr not in by_year:
+        clean_yr = fyr.replace("FY", "").strip()
+        if clean_yr and clean_yr not in by_year and clean_yr != "UNKNOWN":
             by_year[clean_yr] = stmt_yr
 
     target_stmt = by_year.get(target_fyr) or (list(by_year.values())[-1] if by_year else generate_statements_for_year(items, "UNKNOWN", ["UNKNOWN"]))
