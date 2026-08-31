@@ -124,6 +124,8 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
         ("billion", "Billions"), ("billions", "Billions"), ("bn", "Billions")
     ]
 
+    corp_suffix_regex = r'\b(LTD|LIMITED|PROPRIETARY LIMITED|PTY LTD|\(PTY\) LTD|PVT LTD|PRIVATE LIMITED|INC\b|CORP\b|CORPORATION|LLC|GROUP|HOLDINGS|PLC)\b'
+
     for sheet_name, df in sheet_data.items():
         if df.empty:
             continue
@@ -148,7 +150,6 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
                 if cand and len(cand) < 80:
                     company_candidates.append(cand)
             
-            corp_suffix_regex = r'\b(LTD|LIMITED|PROPRIETARY LIMITED|PTY LTD|\(PTY\) LTD|PVT LTD|PRIVATE LIMITED|INC\b|CORP\b|CORPORATION|LLC|GROUP|HOLDINGS|PLC)\b'
             if re.search(corp_suffix_regex, col_str, re.IGNORECASE):
                 cleaned = re.sub(r'[\(\)\[\]]', '', col_str).strip()
                 if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss", "income", "expense", "revenue", "cost", "asset", "liability"]):
