@@ -46,12 +46,12 @@ HISTORICAL_USD_RATES: Dict[str, Dict[str, float]] = {
 def identify_currency(
     text: str, 
     country_context: str = "", 
-    default_iso: str = "USD"
+    default_iso: str = "NOT_DETERMINED"
 ) -> Tuple[str, float]:
     """
     Identifies ISO currency code and unit multiplier from text, symbols, or headers.
     Returns Tuple[iso_code, unit_multiplier].
-    Never guesses blindly when symbols are ambiguous.
+    Never guesses blindly when symbols are ambiguous or absent.
     """
     if not text:
         return default_iso, 1.0
@@ -104,26 +104,35 @@ def identify_currency(
 
     return default_iso, multiplier
 
-def get_exchange_rate(source_curr: str, target_curr: str, year: str = "2026") -> float:
+def get_exchange_rate(source_curr: str, target_curr: str, year: str = "2026") -> Optional[float]:
     """
     Retrieves historical exchange rate converting 1 Unit of source_curr into target_curr.
+    Returns None if currency is NOT_DETERMINED or unsupported.
     """
-    if source_curr == target_curr:
+    if source_curr == target_curr and source_curr not in ["NOT_DETERMINED", "UNKNOWN"]:
         return 1.0
 
-    # pyrefly: ignore [unnecessary-type-conversion]
+    if source_curr in ["NOT_DETERMINED", "UNKNOWN"] or target_curr in ["NOT_DETERMINED", "UNKNOWN"]:
+        return None
+
     yr_str = str(year)
     yr = yr_str if yr_str in HISTORICAL_USD_RATES else "2026"
     rates = HISTORICAL_USD_RATES[yr]
 
-    s_to_usd = rates.get(source_curr, 1.0)
-    t_to_usd = rates.get(target_curr, 1.0)
+    if source_curr not in rates or target_curr not in rates:
+        return None
+
+    s_to_usd = rates.get(source_curr)
+    t_to_usd = rates.get(target_curr)
+    
+    if s_to_usd is None or t_to_usd is None or t_to_usd == 0:
+        return None
 
     # Rate converting source_curr to target_curr: (s_to_usd / t_to_usd)
     return round(s_to_usd / t_to_usd, 6)
 
 def convert_currency(
-    amount: float,
+    amount: Optional[float],
     source_curr: str,
     target_curr: str,
     year: str = "2026",
@@ -139,13 +148,27 @@ def convert_currency(
             "original_currency": source_curr,
             "converted_amount": None,
             "target_currency": target_curr,
-            "exchange_rate": 1.0,
+            "exchange_rate": None,
             "rate_date": year,
             "source": rate_source,
-            "is_converted": False
+            "is_converted": False,
+            "status": "NOT_REPORTED"
         }
 
     rate = get_exchange_rate(source_curr, target_curr, year)
+    if rate is None:
+        return {
+            "original_amount": round(amount, 2),
+            "original_currency": source_curr,
+            "converted_amount": None,
+            "target_currency": target_curr,
+            "exchange_rate": None,
+            "rate_date": year,
+            "source": "CONVERSION_NOT_POSSIBLE",
+            "is_converted": False,
+            "status": "NOT_CALCULABLE"
+        }
+
     converted = round(amount * rate, 2)
 
     return {
@@ -156,24 +179,31 @@ def convert_currency(
         "exchange_rate": rate,
         "rate_date": year,
         "source": rate_source,
-        "is_converted": source_curr != target_curr
+        "is_converted": source_curr != target_curr,
+        "status": "CONVERTED" if source_curr != target_curr else "IDENTICAL_CURRENCY"
     }
 
-def format_currency_amount(amount: float, iso_code: str = "USD") -> str:
+def format_currency_amount(amount: Optional[float], iso_code: str = "NOT_DETERMINED") -> str:
     """
     Formats monetary amounts with professional locale rules.
     Uses Indian numbering (Lakhs/Crores) for INR and Western standard for others.
     """
     if amount is None:
-        return "N/A"
+        return "NOT_REPORTED"
 
-    info = SUPPORTED_CURRENCIES.get(iso_code, {"symbol": "$", "format": "WESTERN"})
-    symbol = info["symbol"]
+    iso_upper = (iso_code or "NOT_DETERMINED").upper()
+    if iso_upper in ["NOT_DETERMINED", "UNKNOWN"]:
+        symbol = ""
+        is_indian = False
+    else:
+        info = SUPPORTED_CURRENCIES.get(iso_upper, {"symbol": "", "format": "WESTERN"})
+        symbol = info.get("symbol", "")
+        is_indian = info.get("format") == "INDIAN"
 
     is_negative = amount < 0
     abs_val = abs(amount)
 
-    if info["format"] == "INDIAN":
+    if is_indian:
         # Format using Indian numbering system (e.g. 1,25,00,000.00)
         s = f"{abs_val:,.2f}"
         parts = s.split(".")
@@ -191,6 +221,7 @@ def format_currency_amount(amount: float, iso_code: str = "USD") -> str:
         formatted_str = f"{symbol}{'-' if is_negative else ''}{formatted_int}.{decimal_part}"
     else:
         # Standard Western formatting (e.g. $1,250,000.00)
-        formatted_str = f"{symbol}{'-' if is_negative else ''}{abs_val:,.2f}"
+        sym_prefix = f"{symbol} " if symbol and len(symbol) > 1 and not symbol.endswith(" ") else symbol
+        formatted_str = f"{sym_prefix}{'-' if is_negative else ''}{abs_val:,.2f}"
 
-    return formatted_str
+    return formatted_str.strip()

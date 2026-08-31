@@ -25,20 +25,23 @@ def perform_source_to_result_reconciliation(
     bs = statements.get("balance_sheet", {})
     cf = statements.get("cash_flow", {})
     
+    has_bs = bs.get("status") not in ["NOT_REPORTED_IN_SOURCE", "INCOMPLETE"] and (bs.get("total_assets") is not None or bs.get("total_liabilities") is not None)
+    has_cf = cf.get("status") not in ["NOT_REPORTED_IN_SOURCE", "INCOMPLETE"] and cf.get("operating_activities") is not None
+
     # Mapping between canonical metric IDs and statement values
     statement_metric_map = {
-        "revenue": inc.get("revenue_from_operations", inc.get("total_revenue", 0.0)),
-        "tax_expense": inc.get("tax_expense", 0.0),
-        "net_income": inc.get("net_income", 0.0),
-        "interest_expense": inc.get("interest_expense", 0.0),
-        "total_assets": bs.get("total_assets", 0.0),
-        "total_liabilities": bs.get("total_liabilities", 0.0),
-        "total_equity": bs.get("equity", {}).get("total_equity", 0.0) if isinstance(bs.get("equity"), dict) else 0.0,
-        "goodwill": bs.get("intangible_assets", {}).get("goodwill", 0.0) if isinstance(bs.get("intangible_assets"), dict) else 0.0,
-        "operating_cash_flow": cf.get("operating_activities", 0.0),
-        "investing_cash_flow": cf.get("investing_activities", 0.0),
-        "financing_cash_flow": cf.get("financing_activities", 0.0),
-        "net_cash_flow": cf.get("net_change_in_cash", 0.0),
+        "revenue": inc.get("revenue_from_operations") if inc.get("revenue_from_operations") is not None else inc.get("total_revenue"),
+        "tax_expense": inc.get("tax_expense"),
+        "net_income": inc.get("net_income"),
+        "interest_expense": inc.get("interest_expense") if inc.get("interest_expense") is not None else inc.get("finance_cost"),
+        "total_assets": bs.get("total_assets") if has_bs else None,
+        "total_liabilities": bs.get("total_liabilities") if has_bs else None,
+        "total_equity": (bs.get("equity", {}).get("total_equity") if isinstance(bs.get("equity"), dict) else None) if has_bs else None,
+        "goodwill": (bs.get("intangible_assets", {}).get("goodwill") if isinstance(bs.get("intangible_assets"), dict) else None) if has_bs else None,
+        "operating_cash_flow": cf.get("operating_activities") if has_cf else None,
+        "investing_cash_flow": cf.get("investing_activities") if has_cf else None,
+        "financing_cash_flow": cf.get("financing_activities") if has_cf else None,
+        "net_cash_flow": cf.get("net_change_in_cash") if has_cf else None,
     }
 
     metric_results = []
@@ -49,13 +52,13 @@ def perform_source_to_result_reconciliation(
     for metric_id, report_val in statement_metric_map.items():
         canonical_item = canonical_b.get(metric_id)
         
-        if not canonical_item or canonical_item.get("validation_status") == "Not Separately Reported in Source Workbook":
+        if not canonical_item or canonical_item.get("validation_status") == "Not Separately Reported in Source Workbook" or report_val is None:
             metric_results.append({
                 "metric": metric_id,
                 "metric_id": metric_id,
                 "standardized_label": metric_id.replace("_", " ").title(),
-                "source_value": None,
-                "source_location": "N/A",
+                "source_value": float(canonical_item.get("value")) if (canonical_item and canonical_item.get("value") is not None and canonical_item.get("validation_status") != "Not Separately Reported in Source Workbook") else None,
+                "source_location": canonical_item.get("source_cell", "N/A") if canonical_item else "N/A",
                 "parsed_value": None,
                 "normalized_value": None,
                 "mapped_value": None,
@@ -73,7 +76,7 @@ def perform_source_to_result_reconciliation(
             continue
 
         src_val = float(canonical_item.get("value", 0.0))
-        rpt_val = float(report_val) if report_val is not None else 0.0
+        rpt_val = float(report_val)
         diff = round(abs(src_val - rpt_val), 2)
 
         # Tolerance check (up to 1.0 unit rounding tolerance)
@@ -144,9 +147,11 @@ def validate_report_consistency(
         mismatches.append(f"Health score mismatch: Quality report score ({q_score:.1f}) not found in executive summary narrative.")
 
     # 2. Balance Sheet Consistency
+    bs_status = statements.get("balance_sheet", {}).get("status")
     val_report = statements.get("validation_report", {})
-    if val_report.get("balance_sheet_check") != "PASS":
-        mismatches.append(f"Balance sheet consistency failure: Assets != Liabilities + Equity.")
+    bs_check = val_report.get("balance_sheet_check")
+    if bs_status not in ["NOT_REPORTED_IN_SOURCE", "INCOMPLETE"] and bs_check not in ["NOT_REPORTED", "INCOMPLETE", "PASS"]:
+        mismatches.append("Balance sheet consistency failure: Assets != Liabilities + Equity.")
 
     status = "PASS" if len(mismatches) == 0 else "REPORT_CONSISTENCY_FAILED"
     return {

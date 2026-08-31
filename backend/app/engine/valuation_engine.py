@@ -23,16 +23,15 @@ def calculate_dcf_valuation(
     inc = statements.get("income_statement", {})
     bs = statements.get("balance_sheet", {})
     cf = statements.get("cash_flow", {})
-
-    rev = inc.get("total_revenue", 0.0) or inc.get("revenue_from_operations", 0.0)
-    ebit = inc.get("ebit", 0.0) or (inc.get("ebt", 0.0) + inc.get("interest_expense", 0.0))
-    tax_exp = inc.get("tax_expense", 0.0) or 0.0
-    ebt = inc.get("ebt", 0.0) or ebit
+    rev = float(inc.get("total_revenue") or inc.get("revenue_from_operations") or 0.0)
+    ebit = float(inc.get("ebit") or 0.0) or (float(inc.get("ebt") or 0.0) + float(inc.get("interest_expense") or 0.0))
+    tax_exp = float(inc.get("tax_expense") or 0.0)
+    ebt = float(inc.get("ebt") or 0.0) or ebit
     
     effective_tax_rate = min(0.35, max(0.0, tax_exp / ebt)) if ebt > 0 else 0.21
     nopat = ebit * (1 - effective_tax_rate)
     
-    depreciation = inc.get("depreciation_amortization", 0.0) or 0.0
+    depreciation = float(inc.get("depreciation_amortization") or 0.0)
     ocf = cf.get("operating_activities") if cf.get("status") == "Available" else None
     
     # Balance sheet inputs

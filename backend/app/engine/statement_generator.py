@@ -180,33 +180,33 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         net_income_reconciliation_status = "DERIVED"
 
     income_statement = {
-        "sales": round(revenue_from_operations, 2),
-        "revenue_from_operations": round(revenue_from_operations, 2),
-        "other_income": round(other_income, 2) if other_income else None,
-        "other_operating_income": round(other_income, 2) if other_income else None,
-        "total_revenue": round(total_revenue, 2),
-        "total_revenue_and_income": round(total_revenue, 2),
+        "sales": round(revenue_from_operations, 2) if revenues else None,
+        "revenue_from_operations": round(revenue_from_operations, 2) if revenues else None,
+        "other_income": round(other_income, 2) if other_inc_items else None,
+        "other_operating_income": round(other_income, 2) if other_inc_items else None,
+        "total_revenue": round(total_revenue, 2) if revenues else None,
+        "total_revenue_and_income": round(total_revenue, 2) if revenues else None,
         "cost_of_goods_sold": round(total_cogs, 2) if total_cogs is not None else None,
         "cogs": round(total_cogs, 2) if total_cogs is not None else None,
         "cogs_status": "VERIFIED" if has_cogs else "NOT_REPORTED",
         "gross_profit": round(gross_profit, 2) if gross_profit is not None else None,
         "gross_profit_status": gross_profit_status,
-        "operating_expenses": round(total_opex, 2),
-        "profit_from_operations": round(profit_from_operations, 2),
-        "ebitda": round(ebitda, 2),
-        "depreciation_amortization": round(depreciation, 2),
-        "ebit": round(ebit, 2),
-        "finance_income": round(interest_income, 2) if interest_income else None,
-        "interest_income": round(interest_income, 2) if interest_income else None,
-        "finance_cost": round(interest_expense, 2) if interest_expense else None,
-        "interest_expense": round(interest_expense, 2) if interest_expense else None,
-        "pbt": round(ebt, 2),
-        "ebt": round(ebt, 2),
+        "operating_expenses": round(total_opex, 2) if opex_items else 0.0,
+        "profit_from_operations": round(profit_from_operations, 2) if (revenues or explicit_op_items) else None,
+        "ebitda": round(ebitda, 2) if (revenues or explicit_op_items) else None,
+        "depreciation_amortization": round(depreciation, 2) if depr_items else None,
+        "ebit": round(ebit, 2) if (revenues or explicit_op_items) else None,
+        "finance_income": round(interest_income, 2) if interest_income_items else None,
+        "interest_income": round(interest_income, 2) if interest_income_items else None,
+        "finance_cost": round(interest_expense, 2) if interest_items else None,
+        "interest_expense": round(interest_expense, 2) if interest_items else None,
+        "pbt": round(ebt, 2) if (revenues or explicit_pbt_items) else None,
+        "ebt": round(ebt, 2) if (revenues or explicit_pbt_items) else None,
         "tax": round(tax_expense, 2) if tax_items else None,
-        "tax_expense": round(tax_expense, 2),
+        "tax_expense": round(tax_expense, 2) if tax_items else None,
         "tax_status": "VERIFIED" if tax_items else "Not Separately Reported in Source Workbook",
-        "net_profit": round(net_income, 2),
-        "net_income": round(net_income, 2),
+        "net_profit": round(net_income, 2) if (revenues or net_inc_items) else None,
+        "net_income": round(net_income, 2) if (revenues or net_inc_items) else None,
         "net_income_source": net_income_source,
         "net_income_reconciliation_status": net_income_reconciliation_status
     }
@@ -469,6 +469,8 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         bs_diff = None
         bs_status = "INCOMPLETE"
 
+    balance_sheet["status"] = bs_status
+
     # Explicit Trial Balance Check: Trial Balance is APPLICABLE ONLY if source contains explicit trial balance statement or debit & credit columns
     has_explicit_tb = any("trial balance" in str(i.get("sheet")).lower() for i in eval_items) or (
         any(str(i.get("source_header", "")).lower() in ["debit", "dr", "dr."] for i in eval_items) and
@@ -625,19 +627,19 @@ def generate_financial_statements(items: List[Dict[str, Any]]) -> Dict[str, Any]
         }
 
     # Group items by fiscal year
-    f_years = list(set(str(i.get("fiscal_year") or (f"FY{i.get('year')}" if i.get("year") else "FY2026")) for i in items))
+    f_years = list(set(str(i.get("fiscal_year") or (f"FY{i.get('year')}" if i.get("year") and i.get("year") != "UNKNOWN" else "UNKNOWN")) for i in items))
     if not f_years:
-        f_years = ["FY2026"]
+        f_years = ["UNKNOWN"]
         
     def _fy_key(fy_str: str) -> int:
         digits = re.sub(r'\D', '', fy_str)
         return int(digits) if digits else 0
 
     annual_items = [i for i in items if not i.get("is_quarterly", False) and (i.get("period_type") or "ANNUAL") == "ANNUAL"]
-    annual_f_years = list(set(str(i.get("fiscal_year") or (f"FY{i.get('year')}" if i.get("year") else "FY2026")) for i in annual_items)) if annual_items else []
+    annual_f_years = list(set(str(i.get("fiscal_year") or (f"FY{i.get('year')}" if i.get("year") and i.get("year") != "UNKNOWN" else "UNKNOWN")) for i in annual_items)) if annual_items else []
 
     sorted_fyrs = sorted(annual_f_years if annual_f_years else f_years, key=_fy_key)
-    target_fyr = sorted_fyrs[-1] if sorted_fyrs else "FY2026"
+    target_fyr = sorted_fyrs[-1] if sorted_fyrs else "UNKNOWN"
 
     by_year = {}
     for fyr in sorted_fyrs:
@@ -657,7 +659,7 @@ def generate_financial_statements(items: List[Dict[str, Any]]) -> Dict[str, Any]
         if clean_yr and clean_yr not in by_year:
             by_year[clean_yr] = stmt_yr
 
-    target_stmt = by_year.get(target_fyr) or (list(by_year.values())[-1] if by_year else generate_statements_for_year(items, "FY2026", ["FY2026"]))
+    target_stmt = by_year.get(target_fyr) or (list(by_year.values())[-1] if by_year else generate_statements_for_year(items, "UNKNOWN", ["UNKNOWN"]))
     result = dict(target_stmt)
     result["by_year"] = by_year
     result["normalized_items"] = items

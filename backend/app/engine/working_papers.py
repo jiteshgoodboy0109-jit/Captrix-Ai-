@@ -22,7 +22,7 @@ def find_item_provenance(canonical_items: List[Dict[str, Any]], keywords: List[s
                     "source_row": row_idx,
                     "source_cell": str(cell),
                     "source_label": str(it.get("source_label") or it.get("account_name")),
-                    "source_value": float(it.get("raw_value") or it.get("net_amount") or amt),
+                    "source_value": float(it.get("net_amount") if it.get("net_amount") is not None else amt),
                     "period": str(it.get("period_raw") or it.get("year") or "Current"),
                     "currency": str(it.get("currency") or "USD"),
                     "unit": str(it.get("unit") or "Units"),

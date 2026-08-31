@@ -100,19 +100,19 @@ def is_summary_or_total_row(name: str) -> bool:
 def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: str) -> Dict[str, Any]:
     """Inspect filename, sheet names, top rows and columns to detect exact Company Name, Currency, and Unit Scale."""
     detected_company = ""
-    detected_currency = "USD"
-    detected_unit = "Units"
+    detected_currency = "NOT_DETERMINED"
+    detected_unit = "NOT_DETERMINED"
 
     company_candidates = []
     
     # 1. Check filename and sheet names first
-    fn_curr, _ = identify_currency(filename, default_iso="USD")
-    if fn_curr != "USD":
+    fn_curr, _ = identify_currency(filename, default_iso="NOT_DETERMINED")
+    if fn_curr != "NOT_DETERMINED":
         detected_currency = fn_curr
 
     for s_name in sheet_data.keys():
-        s_curr, _ = identify_currency(s_name, default_iso="USD")
-        if s_curr != "USD":
+        s_curr, _ = identify_currency(s_name, default_iso="NOT_DETERMINED")
+        if s_curr != "NOT_DETERMINED":
             detected_currency = s_curr
             break
 
@@ -368,7 +368,12 @@ def classify_account(name: str, sheet_context: str = "") -> str:
         if any(ek in name_lower for ek in ["equity", "share", "capital", "reserve", "surplus"]):
             return "EQUITY"
 
-    return "EXPENSE" if ("cost" in name_lower or "fee" in name_lower or "exp" in name_lower) else "EXPENSE"
+    if any(k in name_lower for k in ["cost", "fee", "exp", "charge", "loss"]):
+        return "EXPENSE"
+    if any(k in name_lower for k in ["sales", "revenue", "income", "gain"]):
+        return "REVENUE"
+
+    return "UNCLASSIFIED"
 
 def detect_year_columns(headers: List[Any], top_rows: List[List[Any]]) -> Dict[int, Dict[str, Any]]:
     """Scan headers and provided top rows to locate financial year column indices accurately by reading raw cell header values."""
@@ -953,16 +958,16 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                     # Multi-Year Grid Processing: Extract value for each detected year column
                     for col_idx, col_info in year_col_map.items():
                         if isinstance(col_info, dict):
-                            year = col_info.get("year", "2026")
-                            raw_hdr = col_info.get("raw_header", f"FY{year}")
+                            year = col_info.get("year") or "UNKNOWN"
+                            raw_hdr = col_info.get("raw_header", f"FY{year}" if year != "UNKNOWN" else "UNKNOWN")
                             col_f_yr = col_info.get("fiscal_year")
                             col_p_type = col_info.get("period_type")
                             col_q = col_info.get("quarter")
                             col_is_q = col_info.get("is_quarterly", False)
                         else:
-                            year = str(col_info)
-                            raw_hdr = f"FY{year}"
-                            col_f_yr = f"FY{year}"
+                            year = str(col_info) if col_info else "UNKNOWN"
+                            raw_hdr = f"FY{year}" if year != "UNKNOWN" else "UNKNOWN"
+                            col_f_yr = f"FY{year}" if year != "UNKNOWN" else "UNKNOWN"
                             col_p_type = "ANNUAL"
                             col_q = None
                             col_is_q = False
@@ -976,23 +981,33 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                             val = clean_value(val_raw)
                             col_letter = chr(65 + col_idx) if col_idx < 26 else f"Col{col_idx}"
                             
-                            try:
-                                yr_val = int(year)
-                            except ValueError:
-                                yr_val = 2026
-
-                            if is_q_effective:
-                                cal_yr = yr_val
-                                f_yr = col_f_yr or ("FY2027" if year == "2026" else f"FY{yr_val + 1}")
-                                p_id = f"{col_q or 'Q1'}_{f_yr}"
-                                p_start = f"{yr_val}-04-01"
-                                p_end = f"{yr_val}-06-30"
+                            if year != "UNKNOWN":
+                                try:
+                                    yr_val = int(year)
+                                    if is_q_effective:
+                                        cal_yr = yr_val
+                                        f_yr = col_f_yr or f"FY{yr_val}"
+                                        p_id = f"{col_q or 'Q1'}_{f_yr}"
+                                        p_start = f"{yr_val}-04-01"
+                                        p_end = f"{yr_val}-06-30"
+                                    else:
+                                        cal_yr = yr_val
+                                        f_yr = col_f_yr or f"FY{yr_val}"
+                                        p_id = f_yr
+                                        p_start = f"{yr_val - 1}-04-01"
+                                        p_end = f"{yr_val}-03-31"
+                                except ValueError:
+                                    cal_yr = None
+                                    f_yr = col_f_yr or "UNKNOWN"
+                                    p_id = f_yr
+                                    p_start = None
+                                    p_end = None
                             else:
-                                cal_yr = yr_val
-                                f_yr = col_f_yr or f"FY{yr_val}"
+                                cal_yr = None
+                                f_yr = col_f_yr or "UNKNOWN"
                                 p_id = f_yr
-                                p_start = f"{yr_val - 1}-04-01"
-                                p_end = f"{yr_val}-03-31"
+                                p_start = None
+                                p_end = None
 
                             print(f"COLUMN {col_letter} -> raw header '{raw_hdr}' -> normalized fiscal year {f_yr}")
 
@@ -1007,7 +1022,7 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                             src_cell = f"{col_letter}{row_num}"
 
                             normalized_items.append({
-                                "company": meta_info.get("company", "Apex Technologies Ltd."),
+                                "company": meta_info.get("company_name") or meta_info.get("company") or "Enterprise Entity",
                                 "account_code": f"{sheet_name}-{idx}-{year}",
                                 "account_name": acct_name,
                                 "account_type": acct_type or "UNCLASSIFIED",
@@ -1092,8 +1107,8 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
                         "row": row_num,
                         "column": "A",
                         "year": "Current",
-                        "fiscal_year": "FY2026",
-                        "period_raw": "Current",
+                        "fiscal_year": "UNKNOWN",
+                        "period_raw": "UNKNOWN",
                         "period_type": "ANNUAL",
                         "unit": meta_info["unit"],
                         "currency": meta_info["currency"],
@@ -1123,6 +1138,11 @@ def parse_workbook(file_bytes: bytes, filename: str) -> Dict[str, Any]:
         "company_name": meta_info["company_name"],
         "currency": meta_info["currency"],
         "unit": meta_info["unit"],
+        "metadata": {
+            "company_name": meta_info["company_name"],
+            "currency": meta_info["currency"],
+            "unit": meta_info["unit"]
+        },
         "sheet_names": detected_sheets,
         "years": all_years,
         "normalized_items": normalized_items
