@@ -33,7 +33,8 @@ def test_01_health_and_accuracy_endpoints():
 
 def test_02_auth_lifecycle_register_login_reset():
     """Verify authentication lifecycle: register, login, forgot password, reset password, get me."""
-    test_email = f"analyst_e2e_{os.getpid()}@captrix-test.ai"
+    import uuid
+    test_email = f"analyst_e2e_{uuid.uuid4().hex[:8]}@captrix-test.ai"
     test_password = "SecurePassword123!"
     
     # 1. Register

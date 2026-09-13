@@ -84,11 +84,11 @@ def calculate_risk_intelligence(statements: Dict[str, Any], ratios: Dict[str, An
 
     if m_score > -1.78:
         m_status = "HIGH_RISK"
-        m_label = "Audit Flag: Anomaly Exposure"
+        m_label = "Analysis Flag: Anomaly Exposure"
         m_description = f"Beneish M-Score of {m_score:.2f} (> -1.78 threshold) indicates accounting anomalies in revenue recognition or asset capitalization."
     else:
         m_status = "LOW_RISK"
-        m_label = "Clean Financial Audit Profile"
+        m_label = "Clean Financial Ledger Profile"
         m_description = f"Beneish M-Score of {m_score:.2f} (<= -1.78 threshold) confirms clean, unmanipulated reporting integrity."
 
     # Risk Recommendations
@@ -97,13 +97,13 @@ def calculate_risk_intelligence(statements: Dict[str, Any], ratios: Dict[str, An
         risk_actions.append("Inject short-term liquidity or renegotiate long-term debt maturities to shift out of the Distress Zone.")
         risk_actions.append("Divest non-core assets to reduce total liability exposure.")
     elif z_status == "GREY":
-        risk_actions.append("Optimize cash conversion cycle to boost working capital ratio above 1.5x.")
+        risk_actions.append("Optimize cash conversion cycle to boost Current Ratio above 1.5x.")
         risk_actions.append("Retain higher proportion of net earnings to build retained earnings reserve.")
     else:
         risk_actions.append("Maintain current conservative debt leverage and optimal liquidity cushion.")
 
     if m_status == "HIGH_RISK":
-        risk_actions.append("Conduct internal audit verification on receivables aging and revenue accrual timing.")
+        risk_actions.append("Conduct verification review on receivables aging and revenue accrual timing.")
 
     return {
         "altman_z_score": {

@@ -33,7 +33,7 @@ class PeriodResolver:
         m_ttm = re.search(r'\b(TTM|LTM)\b', raw, re.IGNORECASE)
         
         m_fy = re.search(r'\bFY\s*([0-9]{2,4})\b', raw, re.IGNORECASE)
-        m_yr_range = re.search(r'\b(20[0-9]{2})[-/]([0-9]{2,4})\b', raw)
+        m_yr_range = re.search(r'\b(20[0-9]{2})[-/–—]([0-9]{2,4})\b', raw)
         m_year = re.search(r'\b(201[5-9]|202[0-9]|2030)\b', raw)
         
         fy_str = None

@@ -186,7 +186,7 @@ async def upload_financial_file(
             company_name=final_company_name,
             health_score=clean_value(health_score),
             status="COMPLETED",
-            report_name=f"{final_company_name} - Financial Audit Report"
+            report_name=f"{final_company_name} - Financial Analysis Report"
         )
         db.add(history_record)
 
@@ -342,7 +342,7 @@ async def load_sample_file(
             company_name=company_name,
             health_score=clean_value(health_score),
             status="COMPLETED",
-            report_name=f"{company_name} - Financial Audit Report"
+            report_name=f"{company_name} - Financial Analysis Report"
         )
         db.add(history_record)
         db.commit()

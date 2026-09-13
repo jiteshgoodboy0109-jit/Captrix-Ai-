@@ -79,8 +79,8 @@ export default function ForgotPasswordPage() {
             {step === 'request'
               ? 'Enter your work email to receive a secure 6-digit Captrix AI password reset PIN'
               : step === 'reset'
-              ? 'Enter your reset PIN and choose a new secure password'
-              : 'Your password has been successfully updated'}
+                ? 'Enter your reset PIN and choose a new secure password'
+                : 'Your password has been successfully updated'}
           </p>
         </div>
 

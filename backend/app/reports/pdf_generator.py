@@ -112,37 +112,38 @@ def generate_pdf_report(
     story = []
 
     # Cover Header
-    story.append(Paragraph(f"Captrix AI — Statutory Financial Audit & Intelligence Report", title_style))
-    story.append(Paragraph(f"<b>Engagement Target:</b> {company_name} | <b>Audit Date:</b> {datetime.datetime.now().strftime('%B %d, %Y')} | <b>Standards:</b> ISA / US GAAS", subtitle_style))
+    story.append(Paragraph(f"Captrix AI Financial Analysis Report", title_style))
+    story.append(Paragraph(f"<b>Engagement Target:</b> {company_name} | <b>Analysis Date:</b> {datetime.datetime.now().strftime('%B %d, %Y')} | <b>Framework:</b> Deterministic Financial Verification (AI-generated analysis — not a statutory audit)", subtitle_style))
     story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor("#0284C7"), spaceAfter=10))
 
-    # 1. Official Auditor's Opinion Certificate Card
+    # 1. Financial Analysis & Data Validation Findings Card
     opinion_obj = audit_report.get("auditor_opinion", {})
-    op_type = opinion_obj.get("opinion_type", "UNQUALIFIED_OPINION")
-    op_title = opinion_obj.get("title", "Independent Auditor's Report")
+    op_type = opinion_obj.get("opinion_type", "VERIFIED_RECONCILIATION")
+    op_title = opinion_obj.get("title", "Financial Analysis Findings")
     op_summary = opinion_obj.get("summary", "")
 
-    if op_type == "UNQUALIFIED_OPINION":
+    if op_type in ["VERIFIED_RECONCILIATION", "UNQUALIFIED_OPINION"]:
         op_bg = "#DCFCE7"
         op_border = "#16A34A"
-        op_tag = "CLEAN BILL OF HEALTH"
-    elif op_type == "QUALIFIED_OPINION":
+        op_tag = "CONSISTENT DATA RECONCILIATION"
+    elif op_type in ["EXCEPTION_NOTED", "QUALIFIED_OPINION"]:
         op_bg = "#FEF3C7"
         op_border = "#D97706"
-        op_tag = "QUALIFIED WITH EXCEPTIONS"
+        op_tag = "EXCEPTIONS FLAGGED FOR REVIEW"
     elif op_type in ["DISCLAIMER_OF_OPINION", "INSUFFICIENT_EVIDENCE"]:
         op_bg = "#F1F5F9"
         op_border = "#64748B"
-        op_tag = "EVIDENCE LIMITATION / INSUFFICIENT EVIDENCE"
+        op_tag = "INCOMPLETE SOURCE EVIDENCE"
     else:
         op_bg = "#FFE4E6"
         op_border = "#E11D48"
-        op_tag = "MATERIAL MISSTATEMENT"
+        op_tag = "ACCOUNTING EQUATION DISCREPANCY"
 
     op_card_data = [
-        [Paragraph(f"<b>AUDITOR'S OPINION: {op_title.upper()}</b>", ParagraphStyle('OpH', parent=body_style, fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor(op_border)))],
-        [Paragraph(f"<b>Classification:</b> {op_tag} | <b>Standards:</b> ISA 700/705 | <b>Sign-Off:</b> {opinion_obj.get('auditor_signature', 'Captrix AI-Assisted Automated Audit Intelligence (Requires Human Auditor Sign-Off)')}", body_style)],
-        [Paragraph(op_summary, body_style)]
+        [Paragraph(f"<b>FINANCIAL ANALYSIS FINDINGS: {op_title.upper()}</b>", ParagraphStyle('OpH', parent=body_style, fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor(op_border)))],
+        [Paragraph(f"<b>Classification:</b> {op_tag} | <b>Framework:</b> Deterministic Reconciliation | <b>Sign-Off:</b> {opinion_obj.get('auditor_signature', 'Captrix Financial Analysis Engine')}", body_style)],
+        [Paragraph(op_summary, body_style)],
+        [Paragraph("<i>Notice: AI-generated analysis — not a statutory audit. This document provides quantitative financial intelligence and deterministic ledger verification.</i>", ParagraphStyle('Discl', parent=body_style, fontSize=7, textColor=colors.HexColor("#64748B")))]
     ]
     t_op = Table(op_card_data, colWidths=[540])
     t_op.setStyle(TableStyle([
@@ -156,10 +157,10 @@ def generate_pdf_report(
     story.append(t_op)
     story.append(Spacer(1, 8))
 
-    # 2. Audit Planning & Materiality Summary
+    # 2. Financial Materiality & Thresholds Framework
     planning_obj = audit_report.get("audit_planning", {})
     if planning_obj:
-        story.append(Paragraph("Audit Planning & Materiality Benchmarks (ISA 320)", h2_style))
+        story.append(Paragraph("Financial Materiality & Analysis Thresholds", h2_style))
         mat_statement = planning_obj.get("materiality_statement", "")
         story.append(Paragraph(mat_statement, body_style))
         
@@ -171,7 +172,7 @@ def generate_pdf_report(
         bench_label = planning_obj.get("benchmark_name") or planning_obj.get("benchmark_basis") or "Selected Benchmark"
         pct_val = float(planning_obj.get("benchmark_percentage", 1.0))
         mat_table_data = [
-            ["Materiality Benchmark", "Base Value / Source Reference", "Threshold Amount", "Audit Action Threshold"],
+            ["Materiality Benchmark", "Base Value / Source Reference", "Threshold Amount", "Verification Action Threshold"],
             [f"Planning Materiality ({pct_val:.1f}%)", f"{bench_label} ({fmt(base_val, sym)})", fmt(pm_val, sym), "Errors above PM require evaluation / investigation."],
             ["Performance Materiality (75%)", f"Planning Materiality ({fmt(pm_val, sym)})", fmt(perf_val, sym), "Substantive sample adjustment threshold"],
             ["Clearly Trivial Limit (5%)", f"Planning Materiality ({fmt(pm_val, sym)})", fmt(triv_val, sym), "Variances < Limit deemed de minimis"]
@@ -194,7 +195,7 @@ def generate_pdf_report(
     lead_scheds = audit_report.get("lead_schedules", [])
     if lead_scheds:
         story.append(Paragraph("Working Paper Lead Schedules Index", h2_style))
-        sched_rows = [["WP Ref", "Schedule Title", "Category", "Audited Total", "Audit Status"]]
+        sched_rows = [["WP Ref", "Schedule Title", "Category", "Reconciled Total", "Verification Status"]]
         for ls in lead_scheds:
             sched_rows.append([
                 ls.get("schedule_ref", "-"),
@@ -260,7 +261,7 @@ def generate_pdf_report(
         inc_items.append(["NET PROFIT FOR THE YEAR", fmt(inc.get("net_income"), sym)])
 
     if inc_items:
-        story.append(Paragraph("Income Statement (Audited Provenance)", h2_style))
+        story.append(Paragraph("Income Statement (Reconciled Source Provenance)", h2_style))
         inc_table_data = [["Line Item", f"Amount ({currency})"]] + inc_items
         t_inc = Table(inc_table_data, colWidths=[360, 180])
         t_inc.setStyle(TableStyle([
@@ -431,9 +432,9 @@ def generate_pdf_report(
     # 6. Audit Exception Register & Management Letter
     mgmt_letter = audit_report.get("management_letter", [])
     if mgmt_letter:
-        story.append(Paragraph("Management Letter — Internal Control Deficiencies & Recommendations", h2_style))
+        story.append(Paragraph("Management Observations & Recommendations", h2_style))
         from typing import List
-        ml_rows: List[List[Any]] = [["Ref", "Audit Area", "Internal Control Finding", "Remediation Action Required"]]
+        ml_rows: List[List[Any]] = [["Ref", "Analysis Area", "Verification Observation", "Recommended Action"]]
         for ml in mgmt_letter:
             ml_rows.append([
                 str(ml.get("ref", "EXC")),
@@ -469,7 +470,7 @@ def generate_pdf_report(
                         ratio_rows.append([cat_name.capitalize(), r.get('name', r_key), r.get('formula', '-'), val_str, stat])
 
     if ratio_rows:
-        story.append(Paragraph("Financial Ratio Analysis & Audit Metrics", h2_style))
+        story.append(Paragraph("Financial Ratio Analysis & Operational Metrics", h2_style))
         ratio_data = [["Category", "Ratio Name", "Formula", "Value", "Status"]] + ratio_rows
         t_ratios = Table(ratio_data, colWidths=[80, 130, 170, 70, 70])
         t_ratios.setStyle(TableStyle([

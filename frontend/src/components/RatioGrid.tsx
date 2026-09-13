@@ -487,8 +487,13 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
                       </div>
                     </div>
 
-                    <div className="p-2.5 bg-slate-50/80 rounded-xl text-[11px] font-mono text-slate-600 border border-slate-100 mb-3">
-                      <span className="font-bold text-slate-400">Formula: </span>{r.formula}
+                    <div className="p-2.5 bg-slate-50/80 rounded-xl text-[11px] font-mono text-slate-600 border border-slate-100 mb-3 space-y-1">
+                      <div><span className="font-bold text-slate-400 font-sans">Formula: </span>{r.formula}</div>
+                      {r.definition_used && (
+                        <div className="text-[10px] text-slate-500 font-sans line-clamp-1 italic">
+                          <span className="font-bold not-italic text-slate-400">Def: </span>{r.definition_used}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -512,7 +517,7 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
       {/* AI Explanation & Detailed Ratio Modal */}
       {selectedRatio && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-start mb-4 border-b pb-3 border-slate-100">
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center font-bold">
@@ -536,12 +541,12 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
                 <div>
                   <p className="text-[11px] font-bold text-slate-400">Calculated Actual</p>
                   <p className="text-lg font-black text-slate-900 mt-0.5">
-                    {selectedRatio.value} {selectedRatio.unit || ''}
+                    {selectedRatio.display_value || (selectedRatio.value !== null ? `${selectedRatio.value} ${selectedRatio.unit || ''}` : 'NOT_CALCULABLE')}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold text-slate-400">Industry Benchmark</p>
-                  <p className="text-lg font-extrabold text-brand-700 mt-0.5">{selectedRatio.benchmark}</p>
+                  <p className="text-[11px] font-bold text-slate-400">Standard Benchmark</p>
+                  <p className="text-lg font-extrabold text-brand-700 mt-0.5">{selectedRatio.benchmark || 'N/A'}</p>
                 </div>
               </div>
 
@@ -552,6 +557,31 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
                 </p>
               </div>
 
+              {selectedRatio.inputs && typeof selectedRatio.inputs === 'object' && Object.keys(selectedRatio.inputs).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Constituent Source Inputs</p>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 grid grid-cols-2 gap-2 text-[11px]">
+                    {Object.entries(selectedRatio.inputs).map(([k, v]) => (
+                      <div key={k} className="flex justify-between items-center py-1 border-b border-slate-200/50 last:border-0 col-span-2 sm:col-span-1">
+                        <span className="text-slate-500 font-medium">{k}:</span>
+                        <span className="font-mono font-bold text-slate-800">
+                          {typeof v === 'number' ? v.toLocaleString() : String(v ?? 'N/A')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedRatio.definition_used && (
+                <div>
+                  <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Accounting Definition Applied</p>
+                  <p className="text-slate-700 leading-relaxed bg-blue-50/60 p-3 rounded-xl border border-blue-100/70 text-[11px]">
+                    {selectedRatio.definition_used}
+                  </p>
+                </div>
+              )}
+
               <div>
                 <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Financial Analysis</p>
                 <p className="text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
@@ -559,15 +589,17 @@ export default function RatioGrid({ ratios }: RatioGridProps) {
                 </p>
               </div>
 
-              <div>
-                <p className="text-[11px] font-extrabold text-brand-600 uppercase tracking-wider mb-1 flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  AI Executive Recommendations
-                </p>
-                <p className="text-slate-800 leading-relaxed bg-brand-50/70 p-3.5 rounded-2xl border border-brand-100 font-medium">
-                  {selectedRatio.ai_explanation}
-                </p>
-              </div>
+              {selectedRatio.ai_explanation && (
+                <div>
+                  <p className="text-[11px] font-extrabold text-brand-600 uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    AI Executive Recommendations
+                  </p>
+                  <p className="text-slate-800 leading-relaxed bg-brand-50/70 p-3.5 rounded-2xl border border-brand-100 font-medium">
+                    {selectedRatio.ai_explanation}
+                  </p>
+                </div>
+              )}
             </div>
 
             <button

@@ -74,14 +74,8 @@ def get_analysis_results(upload_id: int, db: Session = Depends(get_db), current_
     statements_payload = generate_financial_statements(items)
     multi_period = generate_multi_period_analysis(statements_payload)
 
-    ratios_dict = {
-        "profitability": ratio.profitability,
-        "liquidity": ratio.liquidity,
-        "solvency": ratio.solvency,
-        "efficiency": ratio.efficiency
-    }
-
-    from app.engine.financial_analyzer import calculate_corporate_finance
+    from app.engine.financial_analyzer import calculate_financial_ratios, calculate_corporate_finance
+    ratios_dict = calculate_financial_ratios(statements_payload)
     corp_fin_payload = calculate_corporate_finance(statements_payload, ratios_dict)
 
     # Determine document currency
@@ -136,5 +130,8 @@ def get_analysis_results(upload_id: int, db: Session = Depends(get_db), current_
 
     b_dataset = canonical_dataset.get("layer_a_raw_records", []) if isinstance(canonical_dataset, dict) else []
     validated_response = OutputValidator.validate_and_filter_payload(raw_response, b_dataset)
+    from app.engine.output_validator import ReportConsistencyValidator
+    validated_response = ReportConsistencyValidator.sanitize_audit_wording(validated_response)
+    ReportConsistencyValidator.validate_final_report_payload(validated_response, raise_on_error=False)
 
     return validated_response

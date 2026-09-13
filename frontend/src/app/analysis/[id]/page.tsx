@@ -103,7 +103,7 @@ function AnalysisContent() {
   const handleDownloadPDF = () => {
     const targetId = data?.upload_id || uploadId;
     if (!targetId) return;
-    downloadReportFile(`/api/reports/pdf/${targetId}`, `Financial_Audit_${targetId}.pdf`);
+    downloadReportFile(`/api/reports/pdf/${targetId}`, `Financial_Analysis_${targetId}.pdf`);
   };
 
   const handleDownloadExcel = () => {
@@ -159,7 +159,7 @@ function AnalysisContent() {
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-black text-slate-900 tracking-tight">{data.company_name}</h2>
               <span className="text-[10px] font-bold text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded-full border border-brand-200">
-                AUDITED REPORT #{data.upload_id}
+                ANALYSIS REPORT #{data.upload_id}
               </span>
               <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                 CURRENCY: {docCurrency} ({getCurrencySymbol(docCurrency)})
@@ -192,7 +192,7 @@ function AnalysisContent() {
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-brand-700 to-brand-600 hover:from-brand-800 hover:to-brand-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-brand-500/20"
           >
             <Download className="w-4 h-4" />
-            <span>Audit PDF</span>
+            <span>Analysis PDF</span>
           </button>
         </div>
       </div>
@@ -208,7 +208,7 @@ function AnalysisContent() {
         const hasCorpFin = Boolean(manifest.has_corporate_finance && corporate_finance);
         const availableTabs = [
           { key: 'overview', label: 'Executive Overview', icon: BrainCircuit, visible: true },
-          { key: 'audit', label: 'Auditor Working Papers', icon: FileCheck, visible: true },
+          { key: 'audit', label: 'Ledger Verification & Papers', icon: FileCheck, visible: true },
           { key: 'statements', label: 'Financial Statements', icon: FileText, visible: hasStatements },
           { key: 'trends', label: 'Multi-Year Trends & Forecast', icon: TrendingUp, visible: hasTrends },
           { key: 'dupont', label: 'DuPont ROE Tree', icon: GitFork, visible: hasDupont },

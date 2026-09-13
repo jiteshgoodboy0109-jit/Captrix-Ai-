@@ -87,15 +87,21 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
     qr = _rval(ratios.get("liquidity", {}).get("quick_ratio", {}))
     de = _rval(ratios.get("solvency", {}).get("debt_to_equity", {}))
     roe = _rval(ratios.get("profitability", {}).get("return_on_equity", {}))
-    ccc = corp_fin.get("working_capital_cycle", {}).get("cash_conversion_cycle", 30.0)
-    wacc = corp_fin.get("capital_structure", {}).get("wacc", 8.5)
+    ccc = corp_fin.get("working_capital_cycle", {}).get("cash_conversion_cycle")
+    wacc = corp_fin.get("capital_structure", {}).get("wacc")
 
     is_profitable = (net_inc or 0.0) > 0
     is_healthy = (float(health_score) >= 65.0) if isinstance(health_score, (int, float)) else False
 
-    cr_str = f"Current Ratio of {cr:.2f}" if cr is not None else "Current Ratio: Not Calculable (Inputs Missing)"
+    cr_str = f"Current Ratio of {cr:.2f}x" if cr is not None else "Current Ratio: Not Calculable (Inputs Missing)"
     np_str = f"{np_margin:.1f}% net margin" if np_margin is not None else "Net Margin: Not Calculable"
-    de_str = f"Debt/Equity ratio of {de:.2f}" if de is not None else "Debt/Equity: Not Calculable"
+    de_str = f"Debt/Equity ratio of {de:.2f}x" if de is not None else "Debt/Equity: Not Calculable"
+
+    curr_iso = "USD"
+    if canonical_dataset and isinstance(canonical_dataset, dict):
+        curr_iso = canonical_dataset.get("layer_a_records", [{}])[0].get("currency", "USD") if canonical_dataset.get("layer_a_records") else "USD"
+    from app.engine.currency_engine import SUPPORTED_CURRENCIES
+    c_sym = SUPPORTED_CURRENCIES.get(curr_iso, {}).get("symbol", "$") if curr_iso != "NOT_DETERMINED" else "$"
 
     tot_rev = inc.get("total_revenue", 0.0) or rev
     op_rev = inc.get("revenue_from_operations") or inc.get("sales") or rev
@@ -103,15 +109,15 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
     pbt_val = inc.get("pbt") or inc.get("ebt") or inc.get("operating_income") or 0.0
     tax_val = inc.get("tax_expense") or inc.get("tax") or 0.0
     
-    other_inc_str = f"${other_inc_val:,.2f} Other Income; " if (other_inc_val and other_inc_val > 0) else ""
-    pbt_str = f"with Profit Before Tax of ${pbt_val:,.2f}, Tax Expense of ${tax_val:,.2f}, and " if (pbt_val and pbt_val > 0) else ""
-    wacc_str = f", with an estimated Cost of Capital (WACC) of {wacc:.1f}%" if (wacc is not None and isinstance(wacc, (int, float))) else ""
+    other_inc_str = f"{c_sym}{other_inc_val:,.2f} Other Income; " if (other_inc_val and other_inc_val > 0) else ""
+    pbt_str = f"with Profit Before Tax of {c_sym}{pbt_val:,.2f}, Tax Expense of {c_sym}{tax_val:,.2f}, and " if (pbt_val and pbt_val > 0) else ""
+    wacc_str = f", with an estimated simulated Cost of Capital (WACC) of {wacc:.1f}%" if (wacc is not None and isinstance(wacc, (int, float))) else ""
 
     hs_formatted = f"{float(health_score):.1f}/100" if isinstance(health_score, (int, float)) else str(health_score)
     executive_summary = (
         f"Automated AI Financial Intelligence evaluation assigns an overall Financial Health Score of {hs_formatted}. "
-        f"For the Annual period, Sales revenue reaches ${op_rev:,.2f} ({other_inc_str}Total Recognized Revenue: ${tot_rev:,.2f}) "
-        f"{pbt_str}Net Profit of ${net_inc:,.2f} ({np_str}). "
+        f"For the Annual period, Sales revenue reaches {c_sym}{op_rev:,.2f} ({other_inc_str}Total Recognized Revenue: {c_sym}{tot_rev:,.2f}) "
+        f"{pbt_str}Net Profit of {c_sym}{net_inc:,.2f} ({np_str}). "
         f"Liquidity assessment indicates {cr_str}. "
         f"Capital structure leverage is evaluated at {de_str}{wacc_str}."
     )
@@ -120,7 +126,7 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
     weaknesses = []
 
     if np_margin is not None and np_margin >= 10:
-        strengths.append(f"Strong profitability profile: Net profit margin stands at {np_margin:.1f}%, outperforming industry baseline thresholds.")
+        strengths.append(f"Strong profitability profile: Net profit margin stands at {np_margin:.1f}%, reflecting positive bottom-line earnings.")
     elif np_margin is not None and np_margin > 0:
         strengths.append(f"Positive bottom line: Company maintains net profitability margin of {np_margin:.1f}%.")
     elif np_margin is not None and np_margin <= 0:
@@ -129,25 +135,25 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
         strengths.append(f"High gross profit margin of {gp_margin:.1f}%, indicating strong pricing power and cost of goods control.")
 
     if cr is not None and cr >= 1.5:
-        qr_str = f"{qr:.2f}" if qr is not None else "N/A"
-        strengths.append(f"Robust liquidity cushion: Current ratio at {cr:.2f} (Quick ratio: {qr_str}) provides full short-term debt coverage.")
+        qr_str = f"{qr:.2f}x" if qr is not None else "N/A"
+        strengths.append(f"Robust liquidity cushion: Current ratio at {cr:.2f}x (Quick ratio: {qr_str}) provides short-term debt coverage.")
     elif cr is not None:
-        weaknesses.append(f"Liquidity risk exposure: Current ratio at {cr:.2f} indicates potential working capital tightness under market stress.")
+        weaknesses.append(f"Liquidity risk exposure: Current ratio at {cr:.2f}x indicates potential working capital tightness under market stress.")
     else:
-        weaknesses.append("Current Ratio: Not Calculable due to missing current liabilities or current assets.")
+        weaknesses.append("Current Ratio: Not Calculable due to missing current liabilities or current assets in reported schedules.")
 
     if de is not None and de <= 1.2:
-        strengths.append(f"Conservative debt leverage: Debt-to-Equity ratio of {de:.2f} minimizes interest expense and insolvency risk.")
+        strengths.append(f"Conservative debt leverage: Debt-to-Equity ratio of {de:.2f}x minimizes interest expense and insolvency risk.")
     elif de is not None:
-        weaknesses.append(f"Elevated financial leverage: Debt-to-Equity ratio of {de:.2f} increases borrowing sensitivity and debt service burden.")
+        weaknesses.append(f"Elevated financial leverage: Debt-to-Equity ratio of {de:.2f}x increases borrowing sensitivity and debt service burden.")
 
     if roe is not None and roe >= 12.0:
         strengths.append(f"High Return on Equity (ROE) of {roe:.1f}%, delivering strong capital return to shareholders.")
 
     if ccc is not None and ccc <= 45:
-        strengths.append(f"Efficient cash conversion cycle: CCC of {ccc:.1f} days demonstrates swift monetization of working capital assets.")
+        strengths.append(f"Efficient cash conversion cycle: CCC of approximately {ccc:.1f} days (approximation based on ending balances) demonstrates swift monetization of working capital assets.")
     elif ccc is not None:
-        weaknesses.append(f"Extended cash conversion cycle: {ccc:.1f} days ties up working capital in inventory and accounts receivable.")
+        weaknesses.append(f"Extended cash conversion cycle: approximately {ccc:.1f} days (approximation based on ending balances) ties up working capital in inventory and accounts receivable.")
 
     recommendations = []
 
@@ -157,19 +163,19 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
         recommendations.append({
             "priority": "HIGH (Immediate)",
             "title": "Turnaround & Operating Cost Reduction",
-            "action": f"Implement immediate overhead reduction to curb net margin loss of {np_str_val} and stabilize operating cash flow."
+            "action": f"Implement overhead and SG&A cost controls to curb net margin loss of {np_str_val} and stabilize operating cash flow."
         })
     elif cr is not None and cr < 1.2:
         recommendations.append({
             "priority": "HIGH (Immediate)",
             "title": "Immediate Liquidity Injection",
-            "action": f"Secure short-term credit line or inject working capital to raise Current Ratio ({cr:.2f}) above 1.5x minimum safety threshold."
+            "action": f"Secure short-term credit line or inject working capital to raise Current Ratio ({cr:.2f}x) above 1.5x minimum safety threshold."
         })
     elif cr is not None and ccc is not None:
         recommendations.append({
             "priority": "HIGH (Immediate)",
             "title": "Working Capital & Cash Flow Optimization",
-            "action": f"Accelerate receivable collections to compress Cash Conversion Cycle ({ccc:.1f} days) and liberate liquid cash reserves."
+            "action": f"Accelerate receivable collections to compress approximate Cash Conversion Cycle ({ccc:.1f} days, based on ending balances) and liberate liquid cash reserves."
         })
     else:
         recommendations.append({
@@ -190,7 +196,7 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
         recommendations.append({
             "priority": "MEDIUM (3-6 Months)",
             "title": "Operating Margin Enhancement",
-            "action": f"Conduct SG&A audit to expand net profit margin from {np_margin_str} toward industry top-quartile benchmark."
+            "action": f"Review overhead and administrative expenditures to improve net profit margin from {np_margin_str}."
         })
 
     # Dynamic Strategic Priority Recommendation
@@ -201,27 +207,27 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
         recommendations.append({
             "priority": "STRATEGIC (6-12 Months)",
             "title": "Strategic Expansion & Capital Reinvestment",
-            "action": f"Reinvest surplus return on equity ({roe_str}) into high-NPV capital budgeting expansion initiatives."
+            "action": f"Reinvest surplus return on equity ({roe_str}) into positive-NPV expansion initiatives."
         })
     elif st_borrowings_val is not None and st_borrowings_val > 0:
         recommendations.append({
             "priority": "STRATEGIC (6-12 Months)",
             "title": "Capital Structure & Refinancing",
-            "action": f"Refinance short-term liabilities utilizing target WACC benchmark of {wacc:.1f}% to lock in long-term fixed rate capital."
+            "action": "Evaluate refinancing short-term borrowings into longer maturity instruments to reduce debt rollover pressure."
         })
     else:
         recommendations.append({
             "priority": "STRATEGIC (6-12 Months)",
             "title": "Liability & Capital Structure Assessment",
-            "action": "Liability structure cannot be assessed because required liability/equity source data is incomplete or NOT_REPORTED."
+            "action": "Maintain balanced capital structure and monitor working capital liquidity needs."
         })
 
     val_rep = statements.get("validation_report", {})
     if val_rep.get("balance_sheet_check") == "FAIL" or val_rep.get("trial_balance_check") == "FAIL":
         recommendations.insert(0, {
-            "priority": "CRITICAL (Immediate Audit)",
+            "priority": "CRITICAL (Immediate Data Reconciliation)",
             "title": "Accounting Data Quality Disclosure",
-            "action": "Accounting equation mismatch detected in source statements. Reconcile source trial balance line items before deploying capital based on financial ratios."
+            "action": "Accounting equation mismatch detected in source statements. Reconcile source trial balance and balance sheet line items before relying on financial ratios."
         })
 
     wc_r = _rval(ratios.get("liquidity", {}).get("working_capital_ratio", {}))
@@ -230,7 +236,7 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
         "is_healthy": f"The company is financially healthy with a score of {health_score}/100." if is_healthy else f"The company faces financial strain (Score: {health_score}/100).",
         "debt_status": ("Debt levels are conservative and manageable." if (de is not None and de <= 1.5) else ("Debt is elevated and requires structured deleveraging." if de is not None else "Debt status cannot be evaluated because required liability/equity source data is incomplete.")),
         "liquidity_status": ("Liquidity is robust with sufficient liquid assets." if (cr is not None and cr >= 1.5) else ("Liquidity is constrained; short-term debt risk is elevated." if cr is not None else "Liquidity status cannot be evaluated because required balance sheet source data is incomplete.")),
-        "working_capital_status": ("Working capital is sufficient for current operational requirements." if (wc_r is not None and wc_r >= 0.10) else ("Working capital is deficit or constrained." if wc_r is not None else "Working capital status cannot be evaluated because required balance sheet source data is incomplete."))
+        "working_capital_status": ("Net working capital represents a healthy percentage of revenue." if (wc_r is not None and wc_r >= 10.0) else ("Working capital intensity is constrained or negative." if wc_r is not None else "Working capital status cannot be evaluated because required balance sheet source data is incomplete."))
     }
 
     return {
@@ -267,9 +273,8 @@ def answer_financial_query(query: str, statements: Dict[str, Any], ratios: Dict[
     cr = _safe_float(ratios.get("liquidity", {}).get("current_ratio", {}), 1.0)
     roe = _safe_float(ratios.get("profitability", {}).get("return_on_equity", {}), 0.0)
     asset_t = _safe_float(ratios.get('efficiency', {}).get('asset_turnover', {}), 1.0)
-    de_val = _safe_float(ratios.get('solvency', {}).get('debt_to_equity', {}), 1.0)
-    wacc = corp_fin.get("capital_structure", {}).get("wacc", 8.5)
-    ccc = corp_fin.get("working_capital_cycle", {}).get("cash_conversion_cycle", 30.0)
+    wacc = corp_fin.get("capital_structure", {}).get("wacc")
+    ccc = corp_fin.get("working_capital_cycle", {}).get("cash_conversion_cycle")
 
     # 14. USER QUERY FILTER: If user asks a specific question, answer only that question.
     if "revenue" in q or "sales" in q or "turnover" in q:
@@ -325,7 +330,8 @@ def answer_financial_query(query: str, statements: Dict[str, Any], ratios: Dict[
     elif "working capital" in q or "ccc" in q:
         wc_val = corp_fin.get('working_capital_cycle', {}).get('net_working_capital')
         if wc_val is not None:
-            return f"**Working Capital**: Net Working Capital is **${wc_val:,.2f}** (Cash Conversion Cycle: {ccc:.1f} days)."
+            ccc_str = f" (Approximate Cash Conversion Cycle: {ccc:.1f} days based on ending balances)" if ccc is not None else ""
+            return f"**Working Capital**: Net Working Capital is **${wc_val:,.2f}**{ccc_str}."
         return "**Working Capital**: Not calculable because current assets or current liabilities are missing."
 
     elif "recommend" in q or "improve" in q:

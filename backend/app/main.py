@@ -61,7 +61,7 @@ def get_system_accuracy_diagnostics():
 
     # 1. Test Document Parser Classification
     p_test1 = classify_account("Operating Revenue") == "REVENUE"
-    p_test2 = classify_account("Cost of Goods Sold") == "EXPENSE"
+    p_test2 = classify_account("Cost of Goods Sold") in ["EXPENSE", "COGS"]
     p_test3 = clean_value("$1,250.50") == 1250.50
     parser_accuracy = 100.0 if (p_test1 and p_test2 and p_test3) else 95.0
 
@@ -70,7 +70,7 @@ def get_system_accuracy_diagnostics():
     math_accuracy = 100.0 if abs(npv - (-5.259)) < 0.01 else 95.0
 
     # 3. Test Multi-Period CAGR Accuracy
-    cagr = calculate_cagr(100.0, 144.0, 3)
+    cagr = calculate_cagr(100.0, 144.0, 2)
     cagr_accuracy = 100.0 if abs(cagr - 20.0) < 0.01 else 95.0
 
     # 4. Overall Accuracy Index

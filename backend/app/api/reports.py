@@ -64,23 +64,49 @@ def fetch_upload_payload(upload_id: int, db: Session, current_user: User):
             "period_id": meta.get("period_id", ""),
             "scope": meta.get("scope", "STANDALONE")
         })
+    from app.engine.financial_analyzer import calculate_financial_ratios, calculate_corporate_finance
+    from app.engine.output_validator import OutputValidator, ReportConsistencyValidator
+    from app.engine.canonical_model import build_canonical_dataset
+    from app.engine.quality_engine import compute_financial_quality_score
+    from app.engine.reconciliation import perform_source_to_result_reconciliation
+    from app.engine.ai_insights import generate_ai_insights
+
     statements_dict = generate_financial_statements(items)
-    ratios_dict = {
-        "profitability": ratio.profitability if ratio else {},
-        "liquidity": ratio.liquidity if ratio else {},
-        "solvency": ratio.solvency if ratio else {},
-        "efficiency": ratio.efficiency if ratio else {}
-    }
-    corp_dict = {
-        "capital_budgeting": corp.capital_budgeting if corp else {},
-        "capital_structure": corp.capital_structure if corp else {},
-        "working_capital_cycle": corp.working_capital_cycle if corp else {}
-    }
+    # Dynamic recalculation using authoritative RatioEngine as single source of truth
+    ratios_dict = calculate_financial_ratios(statements_dict)
+    corp_dict = calculate_corporate_finance(statements_dict, ratios_dict)
+
+    canonical_dataset = build_canonical_dataset(items, upload.filename)
+    reconciliation_report = perform_source_to_result_reconciliation(canonical_dataset, statements_dict, ratios_dict)
+    quality_report = compute_financial_quality_score(reconciliation_report, statements_dict.get("validation_report", {}))
+    ai_insights = generate_ai_insights(statements_dict, ratios_dict, corp_dict, canonical_dataset, quality_report=quality_report)
+    health_score = ai_insights.get("canonical_health_score", {}).get("score", quality_report.get("quality_score", 85.0))
+
     ai_report_dict = {
-        "health_score": ai_rep.health_score if ai_rep else 85,
-        "executive_summary": ai_rep.executive_summary if ai_rep else "Comprehensive AI Financial Health Audit Completed.",
-        "recommendations": ai_rep.recommendations if ai_rep else ["Maintain positive working capital", "Monitor liquidity coverage"]
+        "health_score": health_score,
+        "executive_summary": ai_insights.get("executive_summary") or "Captrix AI Financial Analysis Report Completed.",
+        "strengths": ai_insights.get("strengths", []),
+        "weaknesses": ai_insights.get("weaknesses", []),
+        "recommendations": ai_insights.get("recommendations", []),
+        "canonical_dataset": canonical_dataset,
+        "quality_report": quality_report
     }
+
+    raw_payload = {
+        "company_name": company_name,
+        "statements": statements_dict,
+        "ratios": ratios_dict,
+        "corporate_finance": corp_dict,
+        "ai_report": ai_report_dict,
+    }
+    validated_payload = OutputValidator.validate_and_filter_payload(raw_payload, items)
+    validated_payload = ReportConsistencyValidator.sanitize_audit_wording(validated_payload)
+    ReportConsistencyValidator.validate_final_report_payload(validated_payload, raise_on_error=False)
+
+    statements_dict = validated_payload.get("statements", statements_dict)
+    ratios_dict = validated_payload.get("ratios", ratios_dict)
+    corp_dict = validated_payload.get("corporate_finance", corp_dict)
+    ai_report_dict = validated_payload.get("ai_report", ai_report_dict)
 
     currency = company.currency if company and company.currency else "USD"
     if currency == "USD":
@@ -93,6 +119,7 @@ def fetch_upload_payload(upload_id: int, db: Session, current_user: User):
     return company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict, currency
 
 @router.get("/pdf/{upload_id}")
+@router.get("/{upload_id}/pdf")
 def download_pdf_report(upload_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict, currency = fetch_upload_payload(upload_id, db, current_user)
     pdf_bytes = generate_pdf_report(company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict, currency=currency)
@@ -101,11 +128,12 @@ def download_pdf_report(upload_id: int, db: Session = Depends(get_db), current_u
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f"attachment; filename=Financial_Audit_{upload_id}.pdf"
+            "Content-Disposition": f"attachment; filename=Financial_Analysis_{upload_id}.pdf"
         }
     )
 
 @router.get("/excel/{upload_id}")
+@router.get("/{upload_id}/excel")
 def download_excel_report(upload_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict, currency = fetch_upload_payload(upload_id, db, current_user)
     excel_bytes = generate_excel_report(company_name, statements_dict, ratios_dict, corp_dict, ai_report_dict)

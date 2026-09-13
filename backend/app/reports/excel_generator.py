@@ -59,24 +59,35 @@ def generate_excel_report(
 
         pd.DataFrame(summary_rows).to_excel(writer, sheet_name="Executive Summary & Health", index=False)
 
-        # 2. Validation & Audit Report
+        # 2. Validation & Analysis Findings Report
         opinion_obj = audit_report.get("auditor_opinion", {})
         planning_obj = audit_report.get("audit_planning", {})
         
+        raw_op_type = str(opinion_obj.get("opinion_type", "VERIFIED_RECONCILIATION"))
+        if raw_op_type in ["UNQUALIFIED_OPINION", "VERIFIED_RECONCILIATION"]:
+            finding_classification = "VERIFIED_RECONCILIATION"
+        elif raw_op_type in ["QUALIFIED_OPINION", "EXCEPTION_NOTED"]:
+            finding_classification = "EXCEPTION_NOTED"
+        elif raw_op_type in ["ADVERSE_OPINION", "MATERIAL_VARIANCE"]:
+            finding_classification = "MATERIAL_VARIANCE"
+        else:
+            finding_classification = "INSUFFICIENT_EVIDENCE"
+
         audit_overview_rows = [
-            {"Audit Dimension": "Company Target", "Audit Assessment": company_name},
-            {"Audit Dimension": "Auditor Opinion Type", "Audit Assessment": opinion_obj.get("opinion_type", "UNQUALIFIED_OPINION")},
-            {"Audit Dimension": "Opinion Title", "Audit Assessment": opinion_obj.get("title", "")},
-            {"Audit Dimension": "Opinion Summary", "Audit Assessment": opinion_obj.get("summary", "")},
-            {"Audit Dimension": "Auditor Sign-off", "Audit Assessment": opinion_obj.get("auditor_signature", "Captrix AI-Assisted Automated Audit Intelligence (Non-Certified Finding — Requires Human Auditor Sign-Off)")},
-            {"Audit Dimension": "Applicable Standards", "Audit Assessment": opinion_obj.get("audit_standards", "ISA / US GAAS")},
-            {"Audit Dimension": "Planning Materiality (PM)", "Audit Assessment": planning_obj.get("planning_materiality", 0)},
-            {"Audit Dimension": "Performance Materiality (75%)", "Audit Assessment": planning_obj.get("performance_materiality", 0)},
-            {"Audit Dimension": "Clearly Trivial Limit (5%)", "Audit Assessment": planning_obj.get("clearly_trivial_threshold", 0)},
-            {"Audit Dimension": "Materiality Benchmark Basis", "Audit Assessment": planning_obj.get("benchmark_basis", "")},
-            {"Audit Dimension": "Materiality Statement", "Audit Assessment": planning_obj.get("materiality_statement", "")}
+            {"Analysis Dimension": "Company Target", "Finding / Assessment": company_name},
+            {"Analysis Dimension": "Analysis Finding Classification", "Finding / Assessment": finding_classification},
+            {"Analysis Dimension": "Finding Title", "Finding / Assessment": opinion_obj.get("title", "")},
+            {"Analysis Dimension": "Finding Summary", "Finding / Assessment": opinion_obj.get("summary", "")},
+            {"Analysis Dimension": "Analysis Sign-off", "Finding / Assessment": opinion_obj.get("auditor_signature", "Captrix Financial Analysis Engine")},
+            {"Analysis Dimension": "Analysis Methodology", "Finding / Assessment": opinion_obj.get("audit_standards", "Deterministic Financial Verification Framework (AI-generated analysis — not a statutory audit)")},
+            {"Analysis Dimension": "Planning Materiality Threshold", "Finding / Assessment": planning_obj.get("planning_materiality", 0)},
+            {"Analysis Dimension": "Performance Materiality (75%)", "Finding / Assessment": planning_obj.get("performance_materiality", 0)},
+            {"Analysis Dimension": "Clearly Trivial Limit (5%)", "Finding / Assessment": planning_obj.get("clearly_trivial_threshold", 0)},
+            {"Analysis Dimension": "Materiality Benchmark Basis", "Finding / Assessment": planning_obj.get("benchmark_basis", "")},
+            {"Analysis Dimension": "Materiality Statement", "Finding / Assessment": planning_obj.get("materiality_statement", "")},
+            {"Analysis Dimension": "Statutory Disclaimer", "Finding / Assessment": "AI-generated analysis — not a statutory audit."}
         ]
-        pd.DataFrame(audit_overview_rows).to_excel(writer, sheet_name="Validation & Audit Report", index=False)
+        pd.DataFrame(audit_overview_rows).to_excel(writer, sheet_name="Validation & Analysis Findings", index=False)
 
         # 3. Source Data Summary
         norm_items = statements.get("normalized_items", [])
@@ -197,7 +208,7 @@ def generate_excel_report(
                     "Category": ls.get("category"),
                     "Account Line Item": line.get("account_name"),
                     "Source Cross-Ref": line.get("cross_ref"),
-                    "Audited Amount": line.get("amount"),
+                    "Verified Amount": line.get("amount"),
                     "Verification Status": line.get("status")
                 })
         if lead_rows:
@@ -209,16 +220,16 @@ def generate_excel_report(
         for exc in exc_list:
             exc_rows.append({
                 "Exception ID": exc.get("exception_id"),
-                "Audit Area": exc.get("audit_area"),
+                "Analysis Area": exc.get("audit_area"),
                 "Issue Title": exc.get("issue_title"),
                 "Description": exc.get("description"),
                 "Severity": exc.get("severity"),
                 "Impact Amount": exc.get("impact_amount"),
                 "Status": exc.get("status"),
-                "Auditor Remediation": exc.get("remediation")
+                "Recommended Action": exc.get("remediation")
             })
         if exc_rows:
-            pd.DataFrame(exc_rows).to_excel(writer, sheet_name="Audit Exception Register", index=False)
+            pd.DataFrame(exc_rows).to_excel(writer, sheet_name="Exception Register", index=False)
 
         # 7. Ratio Analysis (Only Calculable)
         ratio_rows = []
@@ -235,8 +246,8 @@ def generate_excel_report(
                                 "Ratio Name": r.get("name", r_key),
                                 "Formula": r.get("formula", "-"),
                                 "Calculated Value": val,
-                                "Benchmark": r.get("benchmark", "-"),
-                                "Audit Status": stat
+                                "Benchmark": r.get("benchmark") or "Industry benchmark unavailable from the provided data.",
+                                "Verification Status": stat
                             })
         if ratio_rows:
             pd.DataFrame(ratio_rows).to_excel(writer, sheet_name="Ratio Analysis", index=False)

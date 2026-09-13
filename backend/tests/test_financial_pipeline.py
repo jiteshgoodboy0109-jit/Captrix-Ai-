@@ -224,4 +224,4 @@ def test_excel_output_validation():
     assert "Executive Summary & Health" in sheet_names, "Missing Executive Summary sheet"
     assert "Source Data Summary" in sheet_names, "Missing Source Data Summary sheet"
     assert "Statements (Multi-Year)" in sheet_names, "Missing Multi-Year Statements sheet"
-    assert "Validation & Audit Report" in sheet_names, "Missing Validation sheet"
+    assert "Validation & Analysis Findings" in sheet_names or "Validation & Audit Report" in sheet_names, "Missing Validation sheet"

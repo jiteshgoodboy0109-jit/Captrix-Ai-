@@ -49,7 +49,7 @@ export default function RiskIntelligenceViewer({ riskData }: RiskIntelligenceVie
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-base font-extrabold text-slate-900">
-                Solvency Risk & Forensic Audit Intelligence
+                Solvency Risk & Forensic Accounting Intelligence
               </h3>
               <span className="text-[10px] font-extrabold text-brand-700 bg-brand-50 border border-brand-200 px-2 py-0.5 rounded-full">
                 ALTMAN Z-SCORE & BENEISH M-SCORE

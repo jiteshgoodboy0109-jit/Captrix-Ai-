@@ -98,6 +98,6 @@ class AuditQueryEngine:
         updated["management_responder"] = responder_name
         updated["response_received_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         updated["auditor_evaluation"] = auditor_verdict
-        updated["auditor_signoff"] = "AI Lead Statutory Auditor"
+        updated["auditor_signoff"] = "Captrix Financial Analysis Engine"
         updated["status"] = "RESOLVED" if is_satisfactory else "ESCALATED_TO_MANAGEMENT_LETTER"
         return updated

@@ -1,5 +1,12 @@
+import re
 from typing import List, Dict, Any
 from app.engine.document_parser import is_summary_or_total_row
+
+def matches_term(text: str, term: str) -> bool:
+    """Safe token and acronym matcher. Prevents 3-letter acronyms like 'ebt' or 'pat' from matching inside 'debt' or 'patent'."""
+    if len(term) <= 3:
+        return bool(re.search(r'\b' + re.escape(term) + r'\b', text, re.IGNORECASE))
+    return term.lower() in text.lower()
 
 class PERIOD_MISMATCH(ValueError):
     """Exception raised when incompatible period types are combined in aggregation."""
@@ -53,7 +60,7 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     }
 
     # Categorize items for Income Statement & Balance Sheet
-    net_inc_items = [i for i in latest_items if any(k in str(i.get("account_name")).lower() for k in ["net profit", "net income", "profit for the year", "profit after tax", "pat"]) and not i.get("is_quarterly", False)]
+    net_inc_items = [i for i in latest_items if any(matches_term(str(i.get("account_name")), k) for k in ["net profit", "net income", "profit for the year", "profit after tax", "pat"]) and not i.get("is_quarterly", False)]
 
     revenues = [i for i in eval_items if (i.get("account_type") in ["REVENUE", "SALES"]) and i not in net_inc_items and not i.get("is_quarterly", False)]
     if not revenues:
@@ -169,9 +176,9 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     interest_income = sum(abs(i.get("net_amount", 0.0)) for i in interest_income_items) if interest_income_items else None
 
     # --- 5. OPERATING PROFIT / EBIT / EBITDA VERIFICATION PIPELINE ---
-    explicit_ebit_items = [i for i in latest_items if "ebit" in str(i.get("account_name")).lower() and "ebitda" not in str(i.get("account_name")).lower()]
-    explicit_ebitda_items = [i for i in latest_items if "ebitda" in str(i.get("account_name")).lower()]
-    explicit_op_items = [i for i in latest_items if any(k in str(i.get("account_name")).lower() for k in ["profit from operations", "operating profit", "operating income", "pbit"])]
+    explicit_ebit_items = [i for i in latest_items if matches_term(str(i.get("account_name")), "ebit") and not matches_term(str(i.get("account_name")), "ebitda")]
+    explicit_ebitda_items = [i for i in latest_items if matches_term(str(i.get("account_name")), "ebitda")]
+    explicit_op_items = [i for i in latest_items if any(matches_term(str(i.get("account_name")), k) for k in ["profit from operations", "operating profit", "operating income", "pbit"])]
 
     calc_ebitda = (gross_profit - total_opex) if gross_profit is not None else ((revenue_from_operations - total_opex) if revenues else None)
     calc_ebit = (calc_ebitda - (depreciation or 0.0)) if calc_ebitda is not None else None
@@ -220,7 +227,7 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     else:
         calc_pbt = None
 
-    explicit_pbt_items = [i for i in latest_items if any(k in str(i.get("account_name")).lower() for k in ["profit before tax", "pbt", "ebt", "profit before taxation", "profit before taxes"])]
+    explicit_pbt_items = [i for i in latest_items if any(matches_term(str(i.get("account_name")), k) for k in ["profit before tax", "pbt", "ebt", "profit before taxation", "profit before taxes"])]
     pbt_variance = 0.0
     if explicit_pbt_items:
         reported_pbt = abs(float(explicit_pbt_items[0].get("net_amount", 0.0)))
@@ -305,7 +312,8 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         "net_income_source": net_income_source,
         "net_income_reconciliation_status": net_income_reconciliation_status,
         "net_income_calculated": round(calc_net_income, 2) if calc_net_income is not None else None,
-        "net_income_variance": net_income_variance
+        "net_income_variance": net_income_variance,
+        "status": "PASS" if (revenues or net_inc_items or opex_items) else "NOT_REPORTED"
     }
 
     # 3. Balance Sheet Calculation (Strictly Grounded)
@@ -475,7 +483,7 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         total_liabilities = sum(abs(i.get("net_amount", 0.0)) for i in valid_liabilities)
 
     valid_equity = [i for i in equity if not is_summary_or_total_row(str(i.get("account_name")))]
-    share_capital_items = [i for i in valid_equity if any(k in str(i.get("account_name")).lower() for k in ["share capital", "common stock", "equity share capital", "paid up capital", "paid-up capital", "capital stock", "preferred stock", "owner's capital", "owners capital"])]
+    share_capital_items = [i for i in valid_equity if any(k in str(i.get("account_name")).lower() for k in ["share capital", "common stock", "equity share capital", "paid up capital", "paid-up capital", "capital stock", "preferred stock", "owner's capital", "owners capital", "shareholders equity", "shareholders' equity", "shareholders’ equity", "owner's equity", "owners equity"])]
     reserves_items = [i for i in valid_equity if any(k in str(i.get("account_name")).lower() for k in ["retained earnings", "retained income", "reserves & retained earnings", "reserves", "surplus", "other equity", "reserve", "retained profit", "retained profits", "accumulated profit", "accumulated loss", "general reserve", "capital reserve"]) and not any(k in str(i.get("account_name")).lower() for k in ["common stock", "share capital", "capital stock", "treasury"])]
     treasury_items = [i for i in valid_equity if any(k in str(i.get("account_name")).lower() for k in ["treasury stock", "treasury shares"])]
 
@@ -568,6 +576,7 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         bs_status = "INCOMPLETE"
 
     balance_sheet["status"] = bs_status
+    balance_sheet["difference"] = bs_diff
 
     # Explicit Trial Balance Check: Trial Balance is APPLICABLE ONLY if source contains explicit trial balance statement or debit & credit columns
     has_explicit_tb = any("trial balance" in str(i.get("sheet")).lower() for i in eval_items) or (

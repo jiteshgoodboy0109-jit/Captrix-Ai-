@@ -68,8 +68,8 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
           management_response: replyText || "Documentary evidence reconciled with ledger postings and certified by management.",
           management_responder: responderName || "Financial Controller",
           response_received_at: new Date().toLocaleTimeString(),
-          auditor_evaluation: isSatisfactory ? "Explanation evaluated and verified against supporting ledger records. Deemed satisfactory." : "Explanation does not mitigate risk. Escalated to statutory management letter.",
-          auditor_signoff: "AI Statutory Lead Auditor",
+          auditor_evaluation: isSatisfactory ? "Explanation evaluated and verified against supporting ledger records. Deemed satisfactory." : "Explanation does not mitigate risk. Escalated to variance review log.",
+          auditor_signoff: "Captrix Financial Analysis Engine",
           status: isSatisfactory ? "RESOLVED" : "ESCALATED_TO_MANAGEMENT_LETTER"
         };
       }
@@ -82,24 +82,24 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
   const openQueriesCount = queriesList.filter(q => q.status === "OPEN").length;
   const resolvedQueriesCount = queriesList.filter(q => q.status === "RESOLVED").length;
 
-  const opinionType = auditor_opinion?.opinion_type || "UNQUALIFIED_OPINION";
+  const opinionType = auditor_opinion?.opinion_type || "VERIFIED_RECONCILIATION";
 
   const getOpinionStyle = (type: string) => {
-    if (type === "UNQUALIFIED_OPINION") {
+    if (type === "VERIFIED_RECONCILIATION" || type === "UNQUALIFIED_OPINION") {
       return {
         bg: "bg-emerald-50 text-emerald-900 border-emerald-300",
         badgeBg: "bg-emerald-600 text-white",
         icon: ShieldCheck,
-        label: "UNQUALIFIED OPINION (CLEAN BILL OF HEALTH)",
+        label: "VERIFIED RECONCILIATION (CLEAN LEDGER EVIDENCE)",
         border: "border-emerald-400"
       };
     }
-    if (type === "QUALIFIED_OPINION") {
+    if (type === "EXCEPTION_NOTED" || type === "QUALIFIED_OPINION") {
       return {
         bg: "bg-amber-50 text-amber-900 border-amber-300",
         badgeBg: "bg-amber-600 text-white",
         icon: AlertTriangle,
-        label: "QUALIFIED OPINION (EXCEPT-FOR DEPARTURES)",
+        label: "EXCEPTION NOTED (RECONCILIATION DEPARTURES)",
         border: "border-amber-400"
       };
     }
@@ -116,7 +116,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
       bg: "bg-rose-50 text-rose-900 border-rose-300",
       badgeBg: "bg-rose-600 text-white",
       icon: ShieldAlert,
-      label: "ADVERSE OPINION (MATERIAL MISSTATEMENT DETECTED)",
+      label: "MATERIAL VARIANCE DETECTED",
       border: "border-rose-400"
     };
   };
@@ -139,14 +139,14 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-base font-extrabold text-slate-900">
-                Institutional Statutory Financial Audit Suite
+                Captrix Financial Analysis & Verification Suite
               </h3>
               <span className="text-[10px] font-extrabold text-brand-700 bg-brand-50 border border-brand-200 px-2 py-0.5 rounded-full uppercase">
-                ISA / US GAAS COMPLIANT
+                DETERMINISTIC VERIFICATION
               </span>
             </div>
             <p className="text-xs text-slate-500 font-medium">
-              Materiality benchmarks, dynamic lead schedules (WP-A to WP-H), exception register, and formal audit certificate
+              Materiality benchmarks, dynamic lead schedules (WP-A to WP-H), exception register, and financial analysis findings
             </p>
           </div>
         </div>
@@ -157,7 +157,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
             onClick={() => setActiveTab('opinion')}
             className={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'opinion' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
           >
-            Opinion & Planning
+            Findings & Verification
           </button>
           <button
             onClick={() => setActiveTab('lead_schedules')}
@@ -172,7 +172,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
             onClick={() => setActiveTab('queries')}
             className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${activeTab === 'queries' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
           >
-            Audit Queries (PBC)
+            Financial Inquiries & Verification
             {queriesList.length > 0 && (
               <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${openQueriesCount > 0 ? 'bg-brand-600 text-white' : 'bg-emerald-100 text-emerald-700'}`}>
                 {openQueriesCount > 0 ? `${openQueriesCount} Open` : 'Resolved'}
@@ -202,7 +202,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
       {/* TAB 1: OPINION & PLANNING */}
       {activeTab === 'opinion' && (
         <div className="space-y-6">
-          {/* INDEPENDENT AUDITOR'S OPINION CERTIFICATE */}
+          {/* AI FINANCIAL ANALYSIS & VERIFICATION CERTIFICATE */}
           <div className={`glass-card rounded-2xl p-6 border ${style.border} ${style.bg} space-y-4 shadow-sm relative overflow-hidden`}>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b pb-4 border-slate-200/80">
               <div className="flex items-center gap-2.5">
@@ -210,12 +210,17 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
                   <OpinionIcon className="w-3.5 h-3.5" />
                   {style.label}
                 </div>
-                <span className="text-xs font-bold text-slate-600">Official Independent Auditor's Report • {companyName}</span>
+                <span className="text-xs font-bold text-slate-600">AI Financial Analysis & Verification Findings • {companyName}</span>
               </div>
 
-              <span className="text-xs font-mono font-bold text-slate-700 bg-white/90 px-3 py-1 rounded-lg border border-slate-200 shadow-sm">
-                AUDIT DATE: {auditor_opinion?.audit_date || "Current"}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg">
+                  AI Analysis — Not a Statutory Audit
+                </span>
+                <span className="text-xs font-mono font-bold text-slate-700 bg-white/90 px-3 py-1 rounded-lg border border-slate-200 shadow-sm">
+                  DATE: {auditor_opinion?.audit_date || "Current"}
+                </span>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -228,10 +233,10 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs font-bold text-slate-700 pt-1 gap-2">
               <div className="flex items-center gap-1.5">
                 <Award className="w-4 h-4 text-brand-600" />
-                <span>Auditor Signature: <strong>{auditor_opinion?.auditor_signature}</strong></span>
+                <span>Analysis Sign-off: <strong>{auditor_opinion?.auditor_signature}</strong></span>
               </div>
               <span className="text-[10px] text-slate-500 uppercase tracking-wider font-mono">
-                Standards: {auditor_opinion?.audit_standards || "ISA / US GAAS"}
+                Framework: {auditor_opinion?.audit_standards || "Automated Deterministic Verification (Not a Statutory Audit)"}
               </span>
             </div>
           </div>
@@ -243,7 +248,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
                 <div>
                   <div className="flex items-center gap-2">
                     <SlidersHorizontal className="w-4 h-4 text-brand-600" />
-                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Audit Planning & Thresholds (ISA 320)</span>
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Planning & Materiality Thresholds</span>
                   </div>
                   <h4 className="text-base font-extrabold text-slate-900 mt-0.5">Calculated Materiality Framework</h4>
                 </div>
@@ -287,7 +292,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
             <div>
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-brand-600" />
-                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Audit Documentation</span>
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Verification Documentation</span>
               </div>
               <h4 className="text-base font-extrabold text-slate-900 mt-0.5">Verified Working Paper Lead Schedules (WP-A to WP-H)</h4>
             </div>
@@ -331,7 +336,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
                           <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase text-[10px]">
                             <th className="py-2 px-3">Account Line Item</th>
                             <th className="py-2 px-3">Source Cross-Ref</th>
-                            <th className="py-2 px-3 text-right">Audited Amount</th>
+                            <th className="py-2 px-3 text-right">Verified Amount</th>
                             <th className="py-2 px-3 text-center">Status</th>
                           </tr>
                         </thead>
@@ -367,10 +372,10 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
               <div>
                 <div className="flex items-center gap-2">
                   <MessageSquare className="w-5 h-5 text-brand-600" />
-                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">PBC Audit Query Lifecycle</span>
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Verification Inquiry Lifecycle</span>
                 </div>
                 <h4 className="text-base font-extrabold text-slate-900 mt-0.5">
-                  Formal Audit Queries & Management Justifications
+                  Management Inquiries & Reconciliations
                 </h4>
               </div>
 
@@ -387,8 +392,8 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
             {queriesList.length === 0 ? (
               <div className="text-center py-12 space-y-3">
                 <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
-                <p className="text-sm font-bold text-slate-800">No Open Audit Queries</p>
-                <p className="text-xs text-slate-500">All extracted records and forensic tests passed statutory validation without requiring management inquiry.</p>
+                <p className="text-sm font-bold text-slate-800">No Open Inquiries</p>
+                <p className="text-xs text-slate-500">All extracted records and analytical tests passed validation without requiring management inquiry.</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -438,9 +443,9 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
                         </div>
                       </div>
 
-                      {/* Auditor Inquiry */}
+                      {/* Analytical Observation & Inquiry */}
                       <div className="space-y-1.5 text-xs">
-                        <p className="text-slate-500 font-bold uppercase text-[10px] tracking-wider">Auditor Observation & Inquiry</p>
+                        <p className="text-slate-500 font-bold uppercase text-[10px] tracking-wider">Analytical Observation & Inquiry</p>
                         <p className="text-slate-800 font-medium leading-relaxed bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
                           {q.management_query}
                         </p>
@@ -455,7 +460,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
                                 <label className="text-[11px] font-bold text-slate-700 uppercase">
                                   Management Formal Response & Evidence Justification
                                 </label>
-                                <span className="text-[10px] text-slate-400">Recorded for Statutory Working Papers</span>
+                                <span className="text-[10px] text-slate-400">Recorded in Working Papers</span>
                               </div>
 
                               {/* Quick institutional presets */}
@@ -538,7 +543,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
                           <div className="p-3.5 bg-white/90 rounded-xl border border-slate-200 text-xs space-y-1.5 shadow-xs">
                             <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
                               <span>Management Representation ({q.management_responder || 'Executive'})</span>
-                              <span>Recorded at {q.response_received_at || 'Audit Stage'}</span>
+                              <span>Recorded at {q.response_received_at || 'Verification Stage'}</span>
                             </div>
                             <p className="text-slate-900 font-semibold italic">"{q.management_response}"</p>
                           </div>
@@ -551,7 +556,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
                               <span className="font-bold">{q.auditor_evaluation}</span>
                             </div>
                             <span className="text-[10px] font-mono font-black uppercase text-slate-600">
-                              Signed: {q.auditor_signoff || 'AI Lead Auditor'}
+                              Signed: {q.auditor_signoff || 'Captrix Financial Analysis Engine'}
                             </span>
                           </div>
                         </div>
@@ -574,9 +579,9 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
               <div>
                 <div className="flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-600" />
-                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Audit Findings</span>
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Verification Findings</span>
                 </div>
-                <h4 className="text-base font-extrabold text-slate-900 mt-0.5">Centralized Audit Exception Register</h4>
+                <h4 className="text-base font-extrabold text-slate-900 mt-0.5">Centralized Exception Register</h4>
               </div>
               <span className="text-xs font-bold text-slate-500">
                 Total Exceptions: {exception_register.length}
@@ -586,7 +591,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
             {exception_register.length === 0 ? (
               <div className="p-8 text-center bg-emerald-50/50 rounded-xl border border-emerald-100 space-y-2">
                 <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
-                <h5 className="text-sm font-extrabold text-emerald-900">Zero Audit Exceptions Detected</h5>
+                <h5 className="text-sm font-extrabold text-emerald-900">Zero Exceptions Detected</h5>
                 <p className="text-xs text-emerald-700">All financial statements, trial balance debits/credits, and forensic tests reconciled cleanly.</p>
               </div>
             ) : (
@@ -595,7 +600,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase text-[10px]">
                       <th className="py-3 px-3">Ref</th>
-                      <th className="py-3 px-3">Audit Area</th>
+                      <th className="py-3 px-3">Analysis Area</th>
                       <th className="py-3 px-3">Issue Title & Description</th>
                       <th className="py-3 px-3 text-center">Severity</th>
                       <th className="py-3 px-3 text-right">Impact Amount</th>
@@ -636,7 +641,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
               <div className="border-b pb-3 border-slate-100">
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4 text-amber-600" />
-                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Executive Management Letter</span>
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Executive Management Observations</span>
                 </div>
                 <h4 className="text-base font-extrabold text-slate-900 mt-0.5">Internal Control Weaknesses & Recommendations</h4>
               </div>
@@ -650,7 +655,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
                     </div>
                     <p className="text-xs text-slate-800 font-medium">{ml.deficiency}</p>
                     <div className="bg-white/80 p-3 rounded-lg border border-amber-200 text-xs text-slate-700">
-                      <strong className="text-brand-800 font-extrabold">Auditor Remediation:</strong> {ml.recommendation}
+                      <strong className="text-brand-800 font-extrabold">Recommended Remediation:</strong> {ml.recommendation}
                     </div>
                   </div>
                 ))}
@@ -747,7 +752,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
 
             <div className="glass-card rounded-2xl p-5 border border-slate-200 space-y-3 shadow-sm bg-white">
               <div className="flex justify-between items-center border-b pb-2 border-slate-100">
-                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Round Number Transaction Audit</span>
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Round Number Transaction Verification</span>
                 <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full">
                   {round_number_audit?.risk_level} ANOMALY RISK
                 </span>
@@ -759,13 +764,13 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
                   <p className="text-2xl font-black text-slate-900">{round_number_audit?.round_entries_pct}%</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-slate-500 font-medium">Audit Threshold</p>
+                  <p className="text-xs text-slate-500 font-medium">Verification Threshold</p>
                   <p className="text-sm font-extrabold text-slate-600">&lt; 20.0%</p>
                 </div>
               </div>
 
               <p className="text-xs text-slate-600 font-medium bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                Transactions audited for manual journal entry overrides and artificial number smoothing.
+                Transactions tested for manual journal entry overrides and artificial number smoothing.
               </p>
             </div>
           </div>
@@ -775,7 +780,7 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
             <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex justify-between items-center">
               <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
                 <Layers className="w-4 h-4 text-slate-500" />
-                General Audit Procedures (WP-101 to WP-104)
+                General Verification Procedures (WP-101 to WP-104)
               </h4>
             </div>
 
@@ -784,10 +789,10 @@ export default function AuditorWorkingPapers({ auditReport, companyName = "Enter
                 <thead>
                   <tr className="bg-slate-100/60 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
                     <th className="py-3 px-4">WP Ref</th>
-                    <th className="py-3 px-4">Audit Procedure</th>
+                    <th className="py-3 px-4">Verification Procedure</th>
                     <th className="py-3 px-4">Verification Result</th>
                     <th className="py-3 px-4 text-center">Status</th>
-                    <th className="py-3 px-4">Auditor Notes</th>
+                    <th className="py-3 px-4">Analysis Notes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">

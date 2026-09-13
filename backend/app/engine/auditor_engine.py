@@ -255,41 +255,41 @@ def perform_full_financial_audit(
         statements, ratios, forensic_payload, materiality
     )
 
-    # 8. Standard Audit Conclusion & Opinion Classification (ISA 700 / 705)
+    # 8. Automated Financial Analysis & Data Validation Findings
+    # Captrix is an AI financial analysis system, not a statutory audit performed by a licensed auditor.
     # Check for Scope Limitation (Single statement / incomplete upload)
     is_scope_limitation = has_partial_bs or (not has_complete_bs and (rev == 0.0 or net_inc == 0.0)) or (not has_complete_bs and bs.get("status") in ["NOT_REPORTED_IN_SOURCE", "INCOMPLETE", "BALANCE_SHEET_MAPPING_FAILED"]) or (bs_check in ["INCOMPLETE", "NOT_REPORTED"])
 
     if is_scope_limitation or not has_complete_bs:
         opinion_type = "INSUFFICIENT_EVIDENCE"
-        opinion_title = "Audit Conclusion: Unable to Conclude (Insufficient Source Documentation / Scope Limitation)"
+        opinion_title = "Data Validation Findings: Incomplete Source Documentation (Scope Limitation)"
         opinion_summary = (
-            "We are unable to form an audit opinion on the accompanying financial records. Due to missing financial statement "
-            "schedules in the uploaded documentation (unreported Balance Sheet liabilities, equity, or operational schedules), "
-            "the system has not obtained sufficient appropriate audit evidence to evaluate the enterprise's financial standing. "
-            "Formal statutory opinions require complete multi-statement records and licensed human auditor review/sign-off."
+            "Due to missing financial statement schedules in the uploaded documentation (unreported Balance Sheet liabilities, "
+            "equity, or operational schedules), the automated analysis cannot fully reconcile the enterprise financial standing. "
+            "AI-generated analysis — not a statutory audit."
         )
     elif has_complete_bs and bs_equation_pass and sloan_status != "AUDIT_FLAG" and exception_package["critical_exceptions_count"] == 0:
-        opinion_type = "UNQUALIFIED_OPINION"
-        opinion_title = "Unqualified Preliminary Audit Conclusion (Clean Supporting Schedules)"
+        opinion_type = "VERIFIED_RECONCILIATION"
+        opinion_title = "Financial Analysis Findings: Clean Supporting Schedules (Balanced & Reconciled)"
         opinion_summary = (
-            "Based on the provided records, the financial statements present fairly, in all material respects, "
-            "the financial position, financial performance, and operating cash flows of the enterprise in accordance "
-            "with applicable reporting frameworks. Subject to final human engagement partner sign-off."
+            "Based on automated mathematical analysis of the provided records, the financial statements exhibit internal arithmetic "
+            "consistency and balance sheet equilibrium across reported schedules. "
+            "AI-generated analysis — not a statutory audit."
         )
     elif has_complete_bs and not bs_equation_pass and is_material_imbalance:
-        opinion_type = "ADVERSE_OPINION"
-        opinion_title = "Adverse Audit Conclusion (Material Statement Misstatement Detected)"
+        opinion_type = "MATERIAL_VARIANCE"
+        opinion_title = "Data Validation Findings: Accounting Equation Discrepancy Detected"
         opinion_summary = (
-            f"Because of the significance of the fundamental accounting equation discrepancy "
-            f"({currency_symbol}{bs_diff:,.2f}) exceeding Planning Materiality ({currency_symbol}{pm:,.2f}), the accompanying "
-            f"financial records contain a material statement breakdown."
+            f"An accounting equation imbalance ({currency_symbol}{bs_diff:,.2f}) was detected between reported Total Assets and "
+            f"Total Liabilities + Equity, exceeding materiality thresholds ({currency_symbol}{pm:,.2f}). "
+            f"Source schedules contain an internal mathematical discrepancy. AI-generated analysis — not a statutory audit."
         )
     else:
-        opinion_type = "QUALIFIED_OPINION"
-        opinion_title = "Qualified Audit Conclusion (Departure / Explanations Required)"
+        opinion_type = "EXCEPTION_NOTED"
+        opinion_title = "Financial Analysis Findings: Specific Schedule Exceptions Identified"
         opinion_summary = (
-            "Except for the effects of the specific matters described in the Audit Exception Register, "
-            "the accompanying financial records present fairly, in all material respects, the financial position of the enterprise."
+            "The accompanying financial schedules reconcile mathematically, except for the specific matters described in the "
+            "Exception Register which require human analyst clarification. AI-generated analysis — not a statutory audit."
         )
 
     from app.engine.audit_queries import AuditQueryEngine
@@ -307,8 +307,9 @@ def perform_full_financial_audit(
             "title": opinion_title,
             "summary": opinion_summary,
             "audit_date": current_date_str,
-            "auditor_signature": "AI AUDIT ANALYSIS — Non-Certified Preliminary Intelligence (Human auditor review/sign-off required)",
-            "audit_standards": "International Standards on Auditing (ISA) & US GAAS"
+            "auditor_signature": "Captrix Financial Analysis Engine",
+            "audit_standards": "Deterministic Financial Verification Framework (AI-generated analysis — not a statutory audit)",
+            "disclaimer": "Captrix is an AI financial analysis system — AI-generated analysis — not a statutory audit."
         },
         "audit_planning": materiality,
         "audit_queries": audit_queries,

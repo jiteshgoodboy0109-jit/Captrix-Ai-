@@ -132,15 +132,28 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
             line_str = line.strip()
             if not line_str or len(line_str) > 90:
                 continue
-            m_label = re.search(r'(?:company|entity|corporate|organization)\s*(?:name)?\s*[:\-]\s*([A-Za-z0-9\s.,()]+)', line_str, re.IGNORECASE)
-            if m_label:
-                cand = m_label.group(1).strip()
-                if cand and len(cand) < 80:
-                    company_candidates.append(cand)
-            elif re.search(corp_suffix_regex, line_str, re.IGNORECASE):
-                cleaned = re.sub(r'[\(\)\[\]]', '', line_str).strip()
-                if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss", "income", "expense", "revenue", "cost", "asset", "liability", "operations", "notes to"]):
-                    company_candidates.append(cleaned)
+            # Ignore question prompts, numbered queries, and instructions
+            if "?" in line_str or re.match(r'^\d+[\.\)]\s*(?:what|how|why|is|does|calculate|state)\b', line_str, re.IGNORECASE):
+                continue
+            
+            # Check candidate line or prefix before delimiter (e.g. "Company Name - Financial Statements")
+            cand_candidates = [line_str]
+            for sep in [" - ", " | ", " : "]:
+                if sep in line_str:
+                    cand_candidates.append(line_str.split(sep)[0].strip())
+
+            for cand_line in cand_candidates:
+                m_label = re.search(r'(?:company|entity|corporate|organization)\s*(?:name)?\s*[:\-]\s*([A-Za-z0-9\s.,()]+)', cand_line, re.IGNORECASE)
+                if m_label:
+                    cand = m_label.group(1).strip()
+                    if cand and len(cand) < 80 and not any(kw in cand.lower() for kw in ["statement", "question", "margin", "ratio"]):
+                        company_candidates.append(cand)
+                        break
+                elif re.search(corp_suffix_regex, cand_line, re.IGNORECASE):
+                    cleaned = re.sub(r'[\(\)\[\]]', '', cand_line).strip()
+                    if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss", "income", "expense", "revenue", "cost", "asset", "liability", "operations", "notes to", "ratio", "margin", "question"]):
+                        company_candidates.append(cleaned)
+                        break
 
     # 2. Check filename and sheet names
     if detected_currency == "NOT_DETERMINED":
@@ -182,9 +195,9 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
                 if cand and len(cand) < 80:
                     company_candidates.append(cand)
             
-            if re.search(corp_suffix_regex, col_str, re.IGNORECASE):
+            if re.search(corp_suffix_regex, col_str, re.IGNORECASE) and "?" not in col_str:
                 cleaned = re.sub(r'[\(\)\[\]]', '', col_str).strip()
-                if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss", "income", "expense", "revenue", "cost", "asset", "liability"]):
+                if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss", "income", "expense", "revenue", "cost", "asset", "liability", "margin", "question"]):
                     company_candidates.append(cleaned)
         
         # Scan top 50 rows
@@ -210,16 +223,17 @@ def detect_company_and_currency(sheet_data: Dict[str, pd.DataFrame], filename: s
                             break
                         
                 # Check Company Name candidates
-                m_label = re.search(r'(?:company|entity|corporate|organization)\s*(?:name)?\s*[:\-]\s*([A-Za-z0-9\s.,()]+)', cell_str, re.IGNORECASE)
-                if m_label:
-                    cand = m_label.group(1).strip()
-                    if cand and len(cand) < 80:
-                        company_candidates.append(cand)
-                
-                if re.search(corp_suffix_regex, cell_str, re.IGNORECASE):
-                    cleaned = re.sub(r'[\(\)\[\]]', '', cell_str).strip()
-                    if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss", "income", "expense", "revenue", "cost", "asset", "liability", "operations"]):
-                        company_candidates.append(cleaned)
+                if "?" not in cell_str and not re.match(r'^\d+[\.\)]\s*(?:what|how|why|is|does)\b', cell_str, re.IGNORECASE):
+                    m_label = re.search(r'(?:company|entity|corporate|organization)\s*(?:name)?\s*[:\-]\s*([A-Za-z0-9\s.,()]+)', cell_str, re.IGNORECASE)
+                    if m_label:
+                        cand = m_label.group(1).strip()
+                        if cand and len(cand) < 80 and not any(kw in cand.lower() for kw in ["statement", "question", "margin"]):
+                            company_candidates.append(cand)
+                    
+                    if re.search(corp_suffix_regex, cell_str, re.IGNORECASE):
+                        cleaned = re.sub(r'[\(\)\[\]]', '', cell_str).strip()
+                        if len(cleaned) < 80 and not any(kw in cleaned.lower() for kw in ["statement", "balance sheet", "income statement", "profit & loss", "income", "expense", "revenue", "cost", "asset", "liability", "operations", "question", "margin"]):
+                            company_candidates.append(cleaned)
 
     if company_candidates:
         detected_company = company_candidates[0]
@@ -245,6 +259,16 @@ def is_non_financial_header(name: str) -> bool:
     """Check if account label is a non-financial section title, unit header, or table metadata string."""
     n = name.strip().lower()
     if not n:
+        return True
+    
+    # Reject question prompts, instructions, and non-financial banners
+    if n.endswith("?") or any(n.startswith(prefix) for prefix in [
+        "what is", "how much", "why is", "calculate", "explain", "describe", "give a", "based on", "based only"
+    ]):
+        return True
+    if any(kw in n for kw in [
+        "test questions", "captrix level", "instructions", "do not treat", "fictional company", "important:", "note:"
+    ]) and not any(fin_kw in n for fin_kw in ["revenue", "sales", "profit", "assets", "liabilities", "expenses"]):
         return True
     
     exact_headers = [
@@ -700,7 +724,16 @@ class DOCXAdapter(DocumentAdapter):
                 line_str = line.strip()
                 if not line_str:
                     continue
-                years_in_line = re.findall(r'\b(?:FY\s*)?(20[1-3][0-9])(?:\s*[-/]\s*(\d{2,4}))?\b', line_str, re.IGNORECASE)
+                line_lower = line_str.lower()
+                
+                # 1. Skip non-financial questions, instructions, and test prompts
+                if line_str.endswith("?") or any(line_lower.startswith(q) for q in ["what is", "how much", "why is", "calculate", "explain", "describe", "give a", "based on", "based only"]):
+                    continue
+                if any(kw in line_lower for kw in ["test questions", "captrix level", "instructions", "do not treat", "fictional company", "important:", "save captrix"]):
+                    continue
+
+                # 2. Check for fiscal years in line (supports Unicode en-dash and em-dash)
+                years_in_line = re.findall(r'\b(?:FY\s*)?(20[1-3][0-9])(?:\s*[-/–—]\s*(\d{2,4}))?\b', line_str, re.IGNORECASE)
                 if len(years_in_line) >= 2:
                     extracted_years = []
                     for m in years_in_line:
@@ -710,14 +743,37 @@ class DOCXAdapter(DocumentAdapter):
                         extracted_years.append(full_yr)
                     current_years = extracted_years
                     continue
-                tokens = line_str.split()
+                elif len(years_in_line) == 1 and ("financial year" in line_lower or "fy" in line_lower or "year ended" in line_lower) and not current_years:
+                    m = years_in_line[0]
+                    base_yr = m[0]
+                    suff_yr = m[1]
+                    full_yr = base_yr[:2] + suff_yr if (suff_yr and len(suff_yr) == 2) else (suff_yr or base_yr)
+                    current_years = [full_yr]
+
+                # 3. Handle key-value formatted line: "Account Name: Amount"
+                if ":" in line_str and not line_str.startswith("http"):
+                    parts = line_str.split(":", 1)
+                    lbl_candidate = parts[0].strip()
+                    val_candidate = parts[1].strip()
+                    lbl_cleaned = re.sub(r'^\d+[\.\)]\s*', '', lbl_candidate).strip()
+                    parsed_num = clean_value_or_none(val_candidate)
+                    if parsed_num is not None and lbl_cleaned:
+                        if not any(skip_kw in lbl_cleaned.lower() for skip_kw in ["company", "date", "cin", "gstin", "phone", "email", "address"]):
+                            mapped = {current_years[0] if current_years else "Col_1": parsed_num}
+                            records.append({"Particulars": lbl_cleaned, **mapped})
+                            continue
+
+                # 4. Handle space/tab separated tabular row
+                cleaned_line = re.sub(r'^\d+[\.\)]\s*', '', line_str).strip()
+                tokens = cleaned_line.split()
                 if len(tokens) < 2:
                     continue
                 num_tokens = []
                 text_tokens = []
                 for t in reversed(tokens):
                     t_clean = t.replace("$", "").replace("₹", "").replace("€", "").replace("£", "").replace(",", "").replace("(", "").replace(")", "").replace("[", "").replace("]", "").strip()
-                    if t_clean in ["—", "–", "-", ""] or (t_clean.replace(".", "", 1).isdigit() and t_clean.replace(".", "", 1) != ""):
+                    t_num = t_clean.lstrip("-+–—")
+                    if t_clean in ["—", "–", "-", ""] or (t_num.replace(".", "", 1).isdigit() and t_num != ""):
                         if len(t_clean) == 4 and t_clean.startswith("20") and t_clean not in current_years:
                             text_tokens.insert(0, t)
                         else:
@@ -767,7 +823,10 @@ class PPTXAdapter(DocumentAdapter):
                 line_str = line.strip()
                 if not line_str:
                     continue
-                years_in_line = re.findall(r'\b(?:FY\s*)?(20[1-3][0-9])(?:\s*[-/]\s*(\d{2,4}))?\b', line_str, re.IGNORECASE)
+                line_lower = line_str.lower()
+                if line_str.endswith("?") or any(line_lower.startswith(q) for q in ["what is", "how much", "why is", "calculate", "explain", "describe", "give a", "based on", "based only"]):
+                    continue
+                years_in_line = re.findall(r'\b(?:FY\s*)?(20[1-3][0-9])(?:\s*[-/–—]\s*(\d{2,4}))?\b', line_str, re.IGNORECASE)
                 if len(years_in_line) >= 2:
                     extracted_years = []
                     for m in years_in_line:
@@ -784,7 +843,8 @@ class PPTXAdapter(DocumentAdapter):
                 text_tokens = []
                 for t in reversed(tokens):
                     t_clean = t.replace("$", "").replace("₹", "").replace("€", "").replace("£", "").replace(",", "").replace("(", "").replace(")", "").replace("[", "").replace("]", "").strip()
-                    if t_clean in ["—", "–", "-", ""] or (t_clean.replace(".", "", 1).isdigit() and t_clean.replace(".", "", 1) != ""):
+                    t_num = t_clean.lstrip("-+–—")
+                    if t_clean in ["—", "–", "-", ""] or (t_num.replace(".", "", 1).isdigit() and t_num != ""):
                         if len(t_clean) == 4 and t_clean.startswith("20") and t_clean not in current_years:
                             text_tokens.insert(0, t)
                         else:
@@ -809,12 +869,20 @@ class TXTAdapter(DocumentAdapter):
         parsed_lines = []
         raw_text = file_bytes.decode("utf-8", errors="ignore")
         for line in raw_text.splitlines():
-            if ":" in line:
-                parts = line.split(":", 1)
-                parsed_lines.append({
-                    "Particulars": parts[0].strip(),
-                    "Amount": clean_value_or_none(parts[1].strip())
-                })
+            line_str = line.strip()
+            if not line_str or line_str.endswith("?"):
+                continue
+            if ":" in line_str:
+                parts = line_str.split(":", 1)
+                lbl = re.sub(r'^\d+[\.\)]\s*', '', parts[0]).strip()
+                val_raw = parts[1].strip()
+                num = clean_value_or_none(val_raw)
+                if num is not None and lbl:
+                    if not any(skip_kw in lbl.lower() for skip_kw in ["company", "date", "cin", "gstin", "phone", "email", "address"]):
+                        parsed_lines.append({
+                            "Particulars": lbl,
+                            "Amount": num
+                        })
         sheet_data = {"Sheet1": pd.DataFrame(parsed_lines)} if parsed_lines else {}
         return sheet_data, raw_text
 

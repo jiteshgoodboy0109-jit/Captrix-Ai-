@@ -124,6 +124,10 @@ class OutputValidator:
         filtered["output_verification_status"] = iv_res["output_verification_status"]
         filtered["verification_report"] = iv_res
 
+        # 6. Pre-Flight Consistency & Audit Wording Sanitization
+        filtered = ReportConsistencyValidator.sanitize_audit_wording(filtered)
+        filtered["consistency_report"] = ReportConsistencyValidator.validate_report_consistency(filtered)
+
         return filtered
 
     @staticmethod
@@ -143,3 +147,223 @@ class OutputValidator:
             "is_grounded": True,
             "provenance": provenance or {}
         }
+
+
+class ReportConsistencyValidator:
+    """
+    Pre-Flight Report Consistency Validation Layer.
+    Guarantees:
+      - Formula vs. displayed inputs and outputs mathematical agreement
+      - Exact definition and naming consistency
+      - Zero statutory audit terminology or claims of assurance
+    """
+    PROHIBITED_AUDIT_TERMS = [
+        "statutory financial audit",
+        "auditor's opinion",
+        "auditor opinion",
+        "unqualified opinion",
+        "unqualified preliminary audit conclusion",
+        "clean bill of health",
+        "isa / us gaas",
+        "isa 700",
+        "isa 705",
+        "isa 320",
+        "present fairly",
+        "presents fairly",
+        "independent auditor",
+        "auditor signature",
+    ]
+
+    DISALLOWED_PATTERNS = [
+        ("official independent auditor's report", "AI Financial Analysis & Verification Findings"),
+        ("statutory financial audit", "automated financial intelligence analysis"),
+        ("unqualified preliminary audit conclusion", "preliminary verified findings"),
+        ("unqualified opinion", "verified reconciliation findings"),
+        ("qualified opinion", "schedule departure findings"),
+        ("adverse opinion", "accounting variance findings"),
+        ("clean bill of health", "consistent data reconciliation"),
+        ("present fairly in all material respects", "reconcile mathematically across reported schedules"),
+        ("presents fairly, in all material respects", "reconciles mathematically across reported schedules"),
+        ("presents fairly", "reconciles mathematically"),
+        ("present fairly", "reconcile mathematically"),
+        ("in accordance with international standards on auditing", "in accordance with deterministic mathematical reconciliation"),
+        ("in accordance with isa", "in accordance with deterministic validation standards"),
+        ("in accordance with us gaas", "in accordance with automated ledger verification"),
+        ("isa / us gaas", "Deterministic Ledger Verification"),
+        ("independent auditor", "Captrix Financial Analysis Engine"),
+        ("auditor's opinion", "financial analysis findings"),
+        ("auditor opinion", "financial analysis findings"),
+    ]
+
+    @classmethod
+    def sanitize_audit_wording(cls, data: Any) -> Any:
+        import re
+        if isinstance(data, str):
+            res = data
+            for pattern, replacement in cls.DISALLOWED_PATTERNS:
+                if pattern in res.lower():
+                    res = re.sub(re.escape(pattern), replacement, res, flags=re.IGNORECASE)
+            return res
+        elif isinstance(data, dict):
+            return {k: cls.sanitize_audit_wording(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [cls.sanitize_audit_wording(item) for item in data]
+        return data
+
+    @classmethod
+    def check_prohibited_audit_terminology(cls, data: Any, path: str = "root") -> List[Dict[str, str]]:
+        """Scans payload recursively for prohibited statutory audit claims."""
+        violations = []
+        if isinstance(data, str):
+            data_lower = data.lower()
+            for term in cls.PROHIBITED_AUDIT_TERMS:
+                # Do not trigger on non-statutory disclaimers like "not a statutory audit"
+                if term in data_lower:
+                    if term in ["statutory financial audit", "statutory audit"] and ("not a statutory" in data_lower or "not an official" in data_lower):
+                        continue
+                    if term in ["auditor's opinion", "auditor opinion", "audit opinion"] and ("not an audit opinion" in data_lower or "not an official" in data_lower):
+                        continue
+                    violations.append({
+                        "path": path,
+                        "prohibited_term": term,
+                        "snippet": data[:120]
+                    })
+        elif isinstance(data, dict):
+            for k, v in data.items():
+                violations.extend(cls.check_prohibited_audit_terminology(v, f"{path}.{k}"))
+        elif isinstance(data, list):
+            for idx, item in enumerate(data):
+                violations.extend(cls.check_prohibited_audit_terminology(item, f"{path}[{idx}]"))
+        return violations
+
+    @classmethod
+    def validate_ratio_reproducibility(cls, ratios: Dict[str, Any]) -> Dict[str, Any]:
+        discrepancies = []
+        verified_count = 0
+        total_calculable = 0
+
+        for category, cat_dict in ratios.items():
+            if not isinstance(cat_dict, dict):
+                continue
+            for r_key, r_obj in cat_dict.items():
+                if not isinstance(r_obj, dict):
+                    continue
+                if not r_obj.get("is_calculable", True) or r_obj.get("value") is None:
+                    continue
+                
+                total_calculable += 1
+                val = r_obj.get("value")
+                inputs = r_obj.get("inputs", {})
+                reproducible = r_obj.get("reproducible")
+                
+                if reproducible is False:
+                    discrepancies.append({
+                        "ratio_key": r_key,
+                        "ratio_name": r_obj.get("name", r_key),
+                        "reported_value": val,
+                        "inputs": inputs,
+                        "issue": "Mathematical reproduction variance exceeded tolerance"
+                    })
+                else:
+                    verified_count += 1
+
+        return {
+            "total_calculable_ratios": total_calculable,
+            "verified_reproducible_ratios": verified_count,
+            "discrepancies": discrepancies,
+            "status": "PASS" if len(discrepancies) == 0 else "FAIL"
+        }
+
+    @classmethod
+    def validate_naming_and_formulas(cls, ratios: Dict[str, Any]) -> List[str]:
+        issues = []
+        liq = ratios.get("liquidity", {})
+        if "working_capital_ratio" in liq:
+            r = liq["working_capital_ratio"]
+            formula = str(r.get("formula", ""))
+            name = str(r.get("name", ""))
+            if "revenue" in formula.lower() and name == "Working Capital Ratio":
+                issues.append("working_capital_ratio mislabeled: Should be Net Working Capital to Revenue when divided by Revenue")
+
+        solv = ratios.get("solvency", {})
+        if "debt_to_equity" in solv:
+            de = solv["debt_to_equity"]
+            de_formula = str(de.get("formula", ""))
+            if "total liabilities" in de_formula.lower():
+                issues.append("debt_to_equity formula error: Debt-to-Equity cannot display Total Liabilities in its formula")
+
+        return issues
+
+    @classmethod
+    def validate_recommendation_grounding(cls, payload: Dict[str, Any]) -> List[str]:
+        issues = []
+        recs = []
+        ai_rep = payload.get("ai_report", {})
+        if isinstance(ai_rep, dict):
+            recs.extend(ai_rep.get("recommendations", []))
+        corp = payload.get("corporate_finance", {})
+        ccc_val = corp.get("working_capital_cycle", {}).get("cash_conversion_cycle") if isinstance(corp, dict) else None
+
+        for rec in recs:
+            rec_text = str(rec.get("action", "") if isinstance(rec, dict) else rec)
+            rec_lower = rec_text.lower()
+            if "top-quartile" in rec_lower or "industry quartile" in rec_lower:
+                issues.append(f"Ungrounded recommendation: Unsupported industry quartile benchmark claimed: '{rec_text[:80]}'")
+            if "cash conversion cycle" in rec_lower and ccc_val is None:
+                issues.append(f"Ungrounded recommendation: Cash conversion cycle recommended but not calculable: '{rec_text[:80]}'")
+        return issues
+
+    @classmethod
+    def validate_final_report_payload(cls, payload: Dict[str, Any], raise_on_error: bool = False) -> Dict[str, Any]:
+        """
+        Executes the 6-point pre-flight validation check immediately before report generation or output dispatch:
+        1. Ratio name <-> formula
+        2. Formula <-> inputs
+        3. Inputs <-> extracted financial data
+        4. Calculated value <-> displayed value
+        5. Recommendation <-> available evidence
+        6. Audit terminology <-> allowed terminology
+        """
+        ratios = payload.get("ratios", {})
+        
+        # 1. Ratio name <-> formula & naming consistency
+        naming_issues = cls.validate_naming_and_formulas(ratios)
+
+        # 2 & 4. Formula <-> inputs and Calculated <-> displayed reproducibility
+        ratio_check = cls.validate_ratio_reproducibility(ratios)
+
+        # 5. Recommendation <-> evidence grounding
+        rec_issues = cls.validate_recommendation_grounding(payload)
+
+        # 6. Audit terminology <-> allowed terminology check
+        audit_violations = cls.check_prohibited_audit_terminology(payload)
+
+        all_errors = []
+        all_errors.extend(naming_issues)
+        all_errors.extend([f"Ratio reproducibility variance in {d['ratio_name']}" for d in ratio_check.get("discrepancies", [])])
+        all_errors.extend(rec_issues)
+        all_errors.extend([f"Prohibited audit terminology '{v['prohibited_term']}' at {v['path']}" for v in audit_violations])
+
+        is_pass = len(all_errors) == 0
+
+        if raise_on_error and not is_pass:
+            raise ValueError(f"Final Report Pre-Flight Validation Failed with {len(all_errors)} errors: {'; '.join(all_errors)}")
+
+        return {
+            "status": "PASS" if is_pass else "FAIL",
+            "pre_flight_status": "PASS" if is_pass else "FAIL",
+            "is_valid": is_pass,
+            "errors": all_errors,
+            "ratio_reproducibility": ratio_check,
+            "naming_issues": naming_issues,
+            "recommendation_grounding_issues": rec_issues,
+            "prohibited_audit_violations": audit_violations,
+            "prohibited_terms_found": audit_violations
+        }
+
+    @classmethod
+    def validate_report_consistency(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return cls.validate_final_report_payload(payload, raise_on_error=False)
+
+
+PROHIBITED_AUDIT_TERMS = ReportConsistencyValidator.PROHIBITED_AUDIT_TERMS

@@ -1,7 +1,7 @@
 """
 Audit Planning & Materiality Engine Module
 Calculates institutional Planning Materiality (PM), Performance Materiality (PM_perf),
-and Clearly Trivial / De Minimis thresholds based on International Standards on Auditing (ISA 320 / US GAAS).
+and Clearly Trivial / De Minimis thresholds based on quantitative financial statement benchmarks.
 Evaluates identified variances against materiality cutoffs.
 """
 
@@ -67,7 +67,7 @@ class AuditPlanner:
             "clearly_trivial_percentage": 5.0,
             "clearly_trivial_threshold": trivial_threshold,
             "currency_symbol": currency_symbol,
-            "audit_approach": "Substantive Analytical & Forensic Ledger Testing",
+            "audit_approach": "Deterministic Financial Verification & Ledger Analysis",
             "materiality_statement": (
                 f"Benchmark Base ({selected.get('name', selected['benchmark'])}): {currency_symbol}{base_amt:,.2f} | "
                 f"Planning Materiality (PM @ {pct:.1f}%): {currency_symbol}{pm:,.2f} | "

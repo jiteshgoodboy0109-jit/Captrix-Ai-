@@ -477,7 +477,7 @@ def generate_working_paper_lead_schedules(
                 "category": "EQUITY",
                 "total_amount": tot_eq,
                 "lines": lines,
-                "audit_objective": "Verify statutory share register, dividend authorizations, and profit allocation roll-forward.",
+                "audit_objective": "Verify corporate share register, dividend authorizations, and profit allocation roll-forward.",
                 "status": "PASS"
             })
 
@@ -530,7 +530,7 @@ def generate_working_paper_lead_schedules(
             "category": "INCOME",
             "total_amount": float(rev_val),
             "lines": lines,
-            "audit_objective": "Perform cut-off testing, contract revenue recognition (IFRS 15 / ASC 606), and invoicing audits.",
+            "audit_objective": "Perform cut-off testing, contract revenue recognition (IFRS 15 / ASC 606), and invoice reconciliation.",
             "status": "PASS"
         })
 
