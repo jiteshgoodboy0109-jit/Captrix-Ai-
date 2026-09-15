@@ -24,9 +24,28 @@ def generate_excel_report(
     health_obj = calculate_financial_health_score(statements, ratios, ai_reports.get("canonical_dataset"), ai_reports.get("quality_report"))
     health_score = health_obj["score"] if bs_status == "PASS" else "NOT_CALCULABLE"
 
+    from app.engine.output_validator import ReportConsistencyValidator
     if audit_report is None:
         from app.engine.auditor_engine import perform_full_financial_audit
         audit_report = perform_full_financial_audit(statements, ratios)
+
+    # Pre-Flight Validation and sanitization on exact render payload
+    render_payload = {
+        "company_name": company_name,
+        "statements": statements,
+        "ratios": ratios,
+        "corporate_finance": corp_fin,
+        "ai_report": ai_reports,
+        "audit_report": audit_report
+    }
+    render_payload = ReportConsistencyValidator.sanitize_audit_wording(render_payload)
+    ReportConsistencyValidator.validate_final_report_payload(render_payload, raise_on_error=False)
+    statements = render_payload.get("statements", statements)
+    ratios = render_payload.get("ratios", ratios)
+    corp_fin = render_payload.get("corporate_finance", corp_fin)
+    ai_reports = render_payload.get("ai_report", ai_reports)
+    raw_audit = render_payload.get("audit_report")
+    audit_report_dict: Dict[str, Any] = raw_audit if isinstance(raw_audit, dict) else (audit_report if isinstance(audit_report, dict) else {})
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         # 1. Executive Summary & Health
@@ -60,8 +79,8 @@ def generate_excel_report(
         pd.DataFrame(summary_rows).to_excel(writer, sheet_name="Executive Summary & Health", index=False)
 
         # 2. Validation & Analysis Findings Report
-        opinion_obj = audit_report.get("auditor_opinion", {})
-        planning_obj = audit_report.get("audit_planning", {})
+        opinion_obj = audit_report_dict.get("auditor_opinion", {})
+        planning_obj = audit_report_dict.get("audit_planning", {})
         
         raw_op_type = str(opinion_obj.get("opinion_type", "VERIFIED_RECONCILIATION"))
         if raw_op_type in ["UNQUALIFIED_OPINION", "VERIFIED_RECONCILIATION"]:
@@ -78,14 +97,14 @@ def generate_excel_report(
             {"Analysis Dimension": "Analysis Finding Classification", "Finding / Assessment": finding_classification},
             {"Analysis Dimension": "Finding Title", "Finding / Assessment": opinion_obj.get("title", "")},
             {"Analysis Dimension": "Finding Summary", "Finding / Assessment": opinion_obj.get("summary", "")},
-            {"Analysis Dimension": "Analysis Sign-off", "Finding / Assessment": opinion_obj.get("auditor_signature", "Captrix Financial Analysis Engine")},
-            {"Analysis Dimension": "Analysis Methodology", "Finding / Assessment": opinion_obj.get("audit_standards", "Deterministic Financial Verification Framework (AI-generated analysis — not a statutory audit)")},
+            {"Analysis Dimension": "Analysis Engine", "Finding / Assessment": opinion_obj.get("auditor_signature", "Captrix Financial Analysis Engine")},
+            {"Analysis Dimension": "Analysis Methodology", "Finding / Assessment": "Deterministic Financial Verification Framework"},
             {"Analysis Dimension": "Planning Materiality Threshold", "Finding / Assessment": planning_obj.get("planning_materiality", 0)},
             {"Analysis Dimension": "Performance Materiality (75%)", "Finding / Assessment": planning_obj.get("performance_materiality", 0)},
             {"Analysis Dimension": "Clearly Trivial Limit (5%)", "Finding / Assessment": planning_obj.get("clearly_trivial_threshold", 0)},
             {"Analysis Dimension": "Materiality Benchmark Basis", "Finding / Assessment": planning_obj.get("benchmark_basis", "")},
             {"Analysis Dimension": "Materiality Statement", "Finding / Assessment": planning_obj.get("materiality_statement", "")},
-            {"Analysis Dimension": "Statutory Disclaimer", "Finding / Assessment": "AI-generated analysis — not a statutory audit."}
+            {"Analysis Dimension": "Analysis Notice", "Finding / Assessment": "Automated financial intelligence analysis and deterministic verification."}
         ]
         pd.DataFrame(audit_overview_rows).to_excel(writer, sheet_name="Validation & Analysis Findings", index=False)
 
@@ -198,7 +217,7 @@ def generate_excel_report(
             pd.DataFrame(multi_stmt_table).to_excel(writer, sheet_name="Statements (Multi-Year)", index=False)
 
         # 5. Lead Schedules (WP-A to WP-H)
-        lead_scheds = audit_report.get("lead_schedules", [])
+        lead_scheds = audit_report_dict.get("lead_schedules", [])
         lead_rows = []
         for ls in lead_scheds:
             for line in ls.get("lines", []):
@@ -215,7 +234,7 @@ def generate_excel_report(
             pd.DataFrame(lead_rows).to_excel(writer, sheet_name="Lead Schedules (WP-A to H)", index=False)
 
         # 6. Exception Register & Management Letter
-        exc_list = audit_report.get("exception_register", [])
+        exc_list = audit_report_dict.get("exception_register", [])
         exc_rows = []
         for exc in exc_list:
             exc_rows.append({
@@ -251,6 +270,21 @@ def generate_excel_report(
                             })
         if ratio_rows:
             pd.DataFrame(ratio_rows).to_excel(writer, sheet_name="Ratio Analysis", index=False)
+
+        # 8. Working Capital & Cash Conversion Cycle
+        wcc = corp_fin.get("working_capital_cycle", {}) if isinstance(corp_fin, dict) else {}
+        ccc_val = wcc.get("cash_conversion_cycle")
+        if ccc_val is not None:
+            is_approx = wcc.get("is_approximation", False)
+            ccc_name = "Approximate Cash Conversion Cycle" if is_approx else "Cash Conversion Cycle"
+            wcc_rows = [
+                {"Operational Metric": "Days Sales Outstanding (DSO)", "Value": f"{wcc.get('days_sales_outstanding_dso')} days", "Approximation Status": "Standard", "Methodology": "Receivables turnover speed: (Receivables / Revenue) * 365"},
+                {"Operational Metric": "Days Inventory Outstanding (DIO)", "Value": f"{wcc.get('days_inventory_outstanding_dio')} days", "Approximation Status": "Standard", "Methodology": "Inventory turnover speed: (Inventory / COGS) * 365"},
+                {"Operational Metric": "Days Payable Outstanding (DPO)", "Value": f"{wcc.get('days_payable_outstanding_dpo')} days", "Approximation Status": "Standard", "Methodology": "Supplier payment duration: (Payables / COGS) * 365"},
+                {"Operational Metric": "Operating Cycle", "Value": f"{wcc.get('operating_cycle')} days", "Approximation Status": "Standard", "Methodology": "DIO + DSO"},
+                {"Operational Metric": ccc_name, "Value": f"{ccc_val} days", "Approximation Status": "Approximate (Ending Balances Used)" if is_approx else "Average Balances Used", "Methodology": "Single-period ending balance basis (multi-period averages not reported in source workbook)" if is_approx else "Calculated using average balances"}
+            ]
+            pd.DataFrame(wcc_rows).to_excel(writer, sheet_name="Working Capital & CCC", index=False)
 
     output.seek(0)
     return output.getvalue()

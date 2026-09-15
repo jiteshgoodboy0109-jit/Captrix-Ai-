@@ -114,7 +114,10 @@ def calculate_corporate_finance(statements: Dict[str, Any], ratios: Dict[str, An
         "days_payable_outstanding_dpo": dpo,
         "operating_cycle": operating_cycle,
         "cash_conversion_cycle": cash_conversion_cycle,
+        "metric_name": "Approximate Cash Conversion Cycle" if cash_conversion_cycle is not None else "Cash Conversion Cycle",
         "is_approximation": True if cash_conversion_cycle is not None else False,
+        "calculation_basis": "ending_balances" if cash_conversion_cycle is not None else None,
+        "approximation_status": "Approximate (Ending Balances Used)" if cash_conversion_cycle is not None else "Standard",
         "assumptions": "Single-period ending balance basis (multi-period averages not reported in source workbook).",
         "interpretation": f"Cash conversion cycle is approximately {cash_conversion_cycle:.1f} days (approximation using ending balances; multi-period average balances unavailable from source schedules)." if cash_conversion_cycle is not None else "Cash conversion cycle requires valid Revenue, COGS, Receivables, Inventory, and Payables in source schedules."
     }

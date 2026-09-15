@@ -116,13 +116,16 @@ def perform_source_to_result_reconciliation(
 
     overall_status = "PASS" if failed_count == 0 else "FAIL"
 
+    mapping_val = canonical_dataset.get("extraction_mapping_validation", {})
+
     return {
         "reconciliation_status": overall_status,
         "total_metrics_checked": len(metric_results),
         "passed_count": passed_count,
         "failed_count": failed_count,
         "not_available_count": not_available_count,
-        "metrics": metric_results
+        "metrics": metric_results,
+        "extraction_mapping_validation": mapping_val
     }
 
 def validate_report_consistency(

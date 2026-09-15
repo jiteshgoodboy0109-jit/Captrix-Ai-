@@ -131,6 +131,45 @@ async def upload_financial_file(
 
         # 5. Financial Statement Engine
         statements = sanitize_json_data(generate_financial_statements(items))
+
+        # 6. Ratio Analysis & Corporate Finance Engine
+        ratios = sanitize_json_data(calculate_financial_ratios(statements))
+        corp_fin = sanitize_json_data(calculate_corporate_finance(statements, ratios))
+
+        # 7. Canonical Dataset, Reconciliation & Quality Engine
+        canonical_dataset = sanitize_json_data(build_canonical_dataset(items, filename))
+        reconciliation_report = sanitize_json_data(perform_source_to_result_reconciliation(canonical_dataset, statements, ratios))
+        quality_report = sanitize_json_data(compute_financial_quality_score(reconciliation_report, statements.get("validation_report", {})))
+
+        # 8. AI Insights & Health Score Engine
+        ai_insights = sanitize_json_data(generate_ai_insights(statements, ratios, corp_fin, canonical_dataset, quality_report=quality_report))
+        health_score = ai_insights.get("canonical_health_score", {}).get("score", quality_report.get("quality_score", 85.0))
+
+        # 9. Authoritative Validation & Pre-Flight Sanitization before DB Persistence
+        from app.engine.output_validator import OutputValidator, ReportConsistencyValidator
+        pre_save_payload = {
+            "company_name": final_company_name,
+            "statements": statements,
+            "ratios": ratios,
+            "corporate_finance": corp_fin,
+            "ai_report": {
+                "health_score": clean_value(health_score),
+                "executive_summary": ai_insights.get("executive_summary", ""),
+                "strengths": ai_insights.get("strengths", []),
+                "weaknesses": ai_insights.get("weaknesses", []),
+                "recommendations": ai_insights.get("recommendations", [])
+            }
+        }
+        pre_save_payload = OutputValidator.validate_and_filter_payload(pre_save_payload, items)
+        pre_save_payload = ReportConsistencyValidator.sanitize_audit_wording(pre_save_payload)
+        ReportConsistencyValidator.validate_final_report_payload(pre_save_payload, raise_on_error=False)
+
+        statements = pre_save_payload.get("statements", statements)
+        ratios = pre_save_payload.get("ratios", ratios)
+        corp_fin = pre_save_payload.get("corporate_finance", corp_fin)
+        val_ai = pre_save_payload.get("ai_report", {})
+
+        # Persist sanitized, authoritative records
         stmt_record = Statement(
             upload_id=upload.id,
             balance_sheet=statements.get("balance_sheet", {}),
@@ -141,8 +180,6 @@ async def upload_financial_file(
         )
         db.add(stmt_record)
 
-        # 6. Ratio Analysis & Corporate Finance Engine
-        ratios = sanitize_json_data(calculate_financial_ratios(statements))
         ratio_record = Ratio(
             upload_id=upload.id,
             profitability=ratios.get("profitability", {}),
@@ -152,7 +189,6 @@ async def upload_financial_file(
         )
         db.add(ratio_record)
 
-        corp_fin = sanitize_json_data(calculate_corporate_finance(statements, ratios))
         corp_record = CorporateFinance(
             upload_id=upload.id,
             capital_budgeting=corp_fin.get("capital_budgeting", {}),
@@ -161,25 +197,17 @@ async def upload_financial_file(
         )
         db.add(corp_record)
 
-        # 7. Canonical Dataset, Reconciliation & Quality Engine
-        canonical_dataset = sanitize_json_data(build_canonical_dataset(items, filename))
-        reconciliation_report = sanitize_json_data(perform_source_to_result_reconciliation(canonical_dataset, statements, ratios))
-        quality_report = sanitize_json_data(compute_financial_quality_score(reconciliation_report, statements.get("validation_report", {})))
-
-        # 8. AI Insights & Health Score Engine
-        ai_insights = sanitize_json_data(generate_ai_insights(statements, ratios, corp_fin, canonical_dataset, quality_report=quality_report))
-        health_score = ai_insights.get("canonical_health_score", {}).get("score", quality_report.get("quality_score", 85.0))
         ai_record = AIReport(
             upload_id=upload.id,
             health_score=clean_value(health_score),
-            executive_summary=ai_insights.get("executive_summary", ""),
-            strengths=ai_insights.get("strengths", []),
-            weaknesses=ai_insights.get("weaknesses", []),
-            recommendations=ai_insights.get("recommendations", [])
+            executive_summary=val_ai.get("executive_summary", ""),
+            strengths=val_ai.get("strengths", []),
+            weaknesses=val_ai.get("weaknesses", []),
+            recommendations=val_ai.get("recommendations", [])
         )
         db.add(ai_record)
 
-        # 9. Save Report History record automatically
+        # 10. Save Report History record automatically
         history_record = History(
             user_id=current_user.id,
             upload_id=upload.id,
@@ -291,6 +319,40 @@ async def load_sample_file(
             db.add(fd)
 
         statements = sanitize_json_data(generate_financial_statements(items))
+        ratios = sanitize_json_data(calculate_financial_ratios(statements))
+        corp_fin = sanitize_json_data(calculate_corporate_finance(statements, ratios))
+
+        canonical_dataset = sanitize_json_data(build_canonical_dataset(items, filename))
+        reconciliation_report = sanitize_json_data(perform_source_to_result_reconciliation(canonical_dataset, statements, ratios))
+        quality_report = sanitize_json_data(compute_financial_quality_score(reconciliation_report, statements.get("validation_report", {})))
+
+        ai_insights = sanitize_json_data(generate_ai_insights(statements, ratios, corp_fin, canonical_dataset, quality_report=quality_report))
+        health_score = ai_insights.get("canonical_health_score", {}).get("score", quality_report.get("quality_score", 85.0))
+
+        # Authoritative Validation & Pre-Flight Sanitization before DB Persistence
+        from app.engine.output_validator import OutputValidator, ReportConsistencyValidator
+        pre_save_payload = {
+            "company_name": company_name,
+            "statements": statements,
+            "ratios": ratios,
+            "corporate_finance": corp_fin,
+            "ai_report": {
+                "health_score": clean_value(health_score),
+                "executive_summary": ai_insights.get("executive_summary", ""),
+                "strengths": ai_insights.get("strengths", []),
+                "weaknesses": ai_insights.get("weaknesses", []),
+                "recommendations": ai_insights.get("recommendations", [])
+            }
+        }
+        pre_save_payload = OutputValidator.validate_and_filter_payload(pre_save_payload, items)
+        pre_save_payload = ReportConsistencyValidator.sanitize_audit_wording(pre_save_payload)
+        ReportConsistencyValidator.validate_final_report_payload(pre_save_payload, raise_on_error=False)
+
+        statements = pre_save_payload.get("statements", statements)
+        ratios = pre_save_payload.get("ratios", ratios)
+        corp_fin = pre_save_payload.get("corporate_finance", corp_fin)
+        val_ai = pre_save_payload.get("ai_report", {})
+
         stmt_record = Statement(
             upload_id=upload.id,
             balance_sheet=statements.get("balance_sheet", {}),
@@ -301,7 +363,6 @@ async def load_sample_file(
         )
         db.add(stmt_record)
 
-        ratios = sanitize_json_data(calculate_financial_ratios(statements))
         ratio_record = Ratio(
             upload_id=upload.id,
             profitability=ratios.get("profitability", {}),
@@ -311,7 +372,6 @@ async def load_sample_file(
         )
         db.add(ratio_record)
 
-        corp_fin = sanitize_json_data(calculate_corporate_finance(statements, ratios))
         corp_record = CorporateFinance(
             upload_id=upload.id,
             capital_budgeting=corp_fin.get("capital_budgeting", {}),
@@ -320,19 +380,13 @@ async def load_sample_file(
         )
         db.add(corp_record)
 
-        canonical_dataset = sanitize_json_data(build_canonical_dataset(items, filename))
-        reconciliation_report = sanitize_json_data(perform_source_to_result_reconciliation(canonical_dataset, statements, ratios))
-        quality_report = sanitize_json_data(compute_financial_quality_score(reconciliation_report, statements.get("validation_report", {})))
-
-        ai_insights = sanitize_json_data(generate_ai_insights(statements, ratios, corp_fin, canonical_dataset, quality_report=quality_report))
-        health_score = ai_insights.get("canonical_health_score", {}).get("score", quality_report.get("quality_score", 85.0))
         ai_record = AIReport(
             upload_id=upload.id,
             health_score=clean_value(health_score),
-            executive_summary=ai_insights.get("executive_summary", ""),
-            strengths=ai_insights.get("strengths", []),
-            weaknesses=ai_insights.get("weaknesses", []),
-            recommendations=ai_insights.get("recommendations", [])
+            executive_summary=val_ai.get("executive_summary", ""),
+            strengths=val_ai.get("strengths", []),
+            weaknesses=val_ai.get("weaknesses", []),
+            recommendations=val_ai.get("recommendations", [])
         )
         db.add(ai_record)
 

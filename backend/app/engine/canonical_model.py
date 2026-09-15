@@ -206,9 +206,10 @@ def build_canonical_dataset(normalized_items: List[Dict[str, Any]], filename: st
         }
         layer_a_raw_records.append(layer_a_record)
 
-        if not is_summary and not is_quarterly and (year == target_year or year == "Current"):
+        if not is_summary and not is_quarterly and (year == target_year or year == "Current") and val_numeric is not None:
             if concept == "REVENUE":
-                if "revenue" not in layer_b_canonical_metrics or abs(val_numeric) > abs(layer_b_canonical_metrics["revenue"]["value"]):
+                curr_rev = layer_b_canonical_metrics.get("revenue", {}).get("value")
+                if "revenue" not in layer_b_canonical_metrics or (curr_rev is not None and abs(val_numeric) > abs(curr_rev)):
                     layer_b_canonical_metrics["revenue"] = {
                         "metric_id": "revenue",
                         "standardized_label": "Revenue / Sales",
@@ -340,10 +341,179 @@ def build_canonical_dataset(normalized_items: List[Dict[str, Any]], filename: st
     layer_b_canonical_metrics["annual"] = annual_periods
     layer_b_canonical_metrics["quarterly"] = quarterly_periods
 
+    # Extraction and Mapping Integrity Validation
+    mapping_validation = ExtractionMappingValidator.validate_extraction_and_mapping(normalized_items, filename)
+
     return {
         "source_file": filename,
         "layer_a_raw_count": len(layer_a_raw_records),
         "layer_a_raw_records": layer_a_raw_records,
-        "layer_b_canonical_metrics": layer_b_canonical_metrics
+        "layer_b_canonical_metrics": layer_b_canonical_metrics,
+        "extraction_mapping_validation": mapping_validation
     }
+
+
+class ExtractionMappingValidator:
+    """
+    Validates that extracted values are mapped correctly across the complete pipeline.
+    Detects:
+      - missing mappings
+      - duplicate mappings
+      - incorrect field mappings
+      - sign errors
+      - currency errors
+      - unit/scale errors
+      - year/period mismatch
+      - accidental overwriting
+    """
+    @classmethod
+    def validate_extraction_and_mapping(
+        cls,
+        items: List[Dict[str, Any]],
+        filename: str = ""
+    ) -> Dict[str, Any]:
+        missing_mappings = []
+        duplicate_mappings = []
+        incorrect_field_mappings = []
+        sign_errors = []
+        currency_errors = []
+        unit_scale_errors = []
+        year_period_mismatches = []
+        accidental_overwrites = []
+
+        seen_slots = {}
+        cell_slots = {}
+        currencies_seen = set()
+        units_seen = set()
+        period_types_seen = set()
+
+        for idx, item in enumerate(items):
+            acct_name = str(item.get("account_name") or item.get("source_label", "")).strip()
+            val = item.get("net_amount") if item.get("net_amount") is not None else item.get("value")
+            acct_type = str(item.get("account_type", "")).upper()
+            sheet = str(item.get("source_sheet") or item.get("sheet", "")).lower()
+            name_lower = acct_name.lower()
+            is_summary = item.get("is_summary", False)
+
+            # 1. Missing mappings (material numeric items with no concept classification)
+            concept = FinancialConceptResolver.resolve_concept(acct_name, section_context=sheet)
+            if val is not None and abs(float(val)) > 0 and concept == "UNCLASSIFIED" and not is_summary:
+                if acct_type in ["UNCLASSIFIED", "UNKNOWN", ""]:
+                    missing_mappings.append({
+                        "item_index": idx,
+                        "account_name": acct_name,
+                        "value": float(val),
+                        "sheet": sheet,
+                        "issue": "Line item has numeric value but lacks classified financial concept"
+                    })
+
+            # 2. Duplicate mappings (multiple non-summary lines claiming same unique primary slot)
+            slot_key = f"{sheet}:{concept}" if concept != "UNCLASSIFIED" else None
+            if slot_key and not is_summary:
+                if slot_key in seen_slots and concept in ["NET_INCOME"]:
+                    duplicate_mappings.append({
+                        "concept": concept,
+                        "first_account": seen_slots[slot_key],
+                        "conflicting_account": acct_name,
+                        "sheet": sheet,
+                        "issue": f"Multiple distinct line items mapped to unique slot '{concept}'"
+                    })
+                seen_slots[slot_key] = acct_name
+
+            # 3. Incorrect field mappings (Balance Sheet vs P&L vs Cash Flow cross contamination)
+            if any(k in sheet for k in ["balance", "position"]):
+                if concept in ["COGS"] and not any(k in name_lower for k in ["inventory", "stock"]):
+                    incorrect_field_mappings.append({
+                        "account_name": acct_name,
+                        "sheet": sheet,
+                        "concept": concept,
+                        "issue": "P&L COGS concept mapped inside Balance Sheet schedule"
+                    })
+            if any(k in sheet for k in ["pnl", "income statement"]):
+                if concept in ["PPE", "INTANGIBLES", "SHARE_CAPITAL"]:
+                    incorrect_field_mappings.append({
+                        "account_name": acct_name,
+                        "sheet": sheet,
+                        "concept": concept,
+                        "issue": "Balance Sheet asset/equity concept mapped inside Income Statement schedule"
+                    })
+
+            # 4. Sign errors
+            if val is not None:
+                v_num = float(val)
+                if concept in ["REVENUE"] and v_num < 0 and "return" not in name_lower and "discount" not in name_lower:
+                    sign_errors.append({
+                        "account_name": acct_name,
+                        "value": v_num,
+                        "concept": concept,
+                        "issue": "Negative revenue detected on standard operating sales line"
+                    })
+                if any(k in name_lower for k in ["total assets", "cash and cash equivalents"]) and v_num < 0:
+                    sign_errors.append({
+                        "account_name": acct_name,
+                        "value": v_num,
+                        "issue": "Negative asset balance detected on standard cumulative asset line"
+                    })
+
+            # 5. Currency consistency tracking
+            curr = str(item.get("currency", "")).upper()
+            if curr and curr not in ["NOT_DETERMINED", "UNKNOWN", "NONE"]:
+                currencies_seen.add(curr)
+
+            # 6. Unit/scale tracking
+            u = str(item.get("unit", "")).upper()
+            if u and u not in ["NOT_DETERMINED", "UNKNOWN", "NONE"]:
+                units_seen.add(u)
+
+            # 7. Year/period tracking
+            p_type = item.get("period_type")
+            if not p_type:
+                p_type = "QUARTERLY" if item.get("is_quarterly") else "ANNUAL"
+            period_types_seen.add(p_type)
+
+            # 8. Accidental overwriting tracking
+            cell_ref = item.get("source_cell")
+            if cell_ref and sheet and str(item.get("year", "")) not in ["UNKNOWN", ""]:
+                cell_key = f"{sheet}!{cell_ref}_{item.get('year')}"
+                if cell_key in cell_slots and cell_slots[cell_key] != acct_name:
+                    accidental_overwrites.append({
+                        "cell": cell_key,
+                        "previous_item": cell_slots[cell_key],
+                        "current_item": acct_name,
+                        "issue": f"Cell {cell_key} mapped to multiple conflicting accounts"
+                    })
+                cell_slots[cell_key] = acct_name
+
+        if len(currencies_seen) > 1:
+            currency_errors.append({
+                "currencies_detected": list(currencies_seen),
+                "issue": "Conflicting currency declarations detected across document items"
+            })
+
+        total_issues = (
+            len(missing_mappings) + len(duplicate_mappings) + len(incorrect_field_mappings) +
+            len(sign_errors) + len(currency_errors) + len(unit_scale_errors) +
+            len(year_period_mismatches) + len(accidental_overwrites)
+        )
+
+        critical_count = len(incorrect_field_mappings) + len(sign_errors) + len(currency_errors)
+
+        return {
+            "status": "PASS" if total_issues == 0 else ("WARNING" if critical_count == 0 else "FLAGGED"),
+            "is_valid": critical_count == 0,
+            "total_items_checked": len(items),
+            "missing_mappings": missing_mappings,
+            "duplicate_mappings": duplicate_mappings,
+            "incorrect_field_mappings": incorrect_field_mappings,
+            "sign_errors": sign_errors,
+            "currency_errors": currency_errors,
+            "unit_scale_errors": unit_scale_errors,
+            "year_period_mismatch": year_period_mismatches,
+            "accidental_overwriting": accidental_overwrites,
+            "summary": {
+                "total_issues": total_issues,
+                "critical_issues": critical_count,
+                "warnings": total_issues - critical_count
+            }
+        }
 

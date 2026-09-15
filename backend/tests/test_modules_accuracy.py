@@ -72,11 +72,11 @@ def test_multi_period_cagr_and_yoy_accuracy():
 
     # YoY growth: (120 - 100) / 100 * 100 = 20.0%
     yoy = calculate_yoy(100.0, 120.0)
-    assert abs(yoy - 20.0) < 0.01
+    assert yoy is not None and abs(yoy - 20.0) < 0.01
 
     # Zero beginning value edge case returns None to avoid false 0% override
     assert calculate_cagr(0.0, 100.0, 3) is None
-    assert calculate_yoy(0.0, 100.0) == 0.0
+    assert calculate_yoy(0.0, 100.0) is None
 
 
 def test_corporate_finance_npv_and_irr_accuracy():

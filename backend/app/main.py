@@ -71,7 +71,7 @@ def get_system_accuracy_diagnostics():
 
     # 3. Test Multi-Period CAGR Accuracy
     cagr = calculate_cagr(100.0, 144.0, 2)
-    cagr_accuracy = 100.0 if abs(cagr - 20.0) < 0.01 else 95.0
+    cagr_accuracy = 100.0 if (cagr is not None and abs(cagr - 20.0) < 0.01) else 95.0
 
     # 4. Overall Accuracy Index
     overall_accuracy = round((parser_accuracy + math_accuracy + cagr_accuracy) / 3.0, 1)

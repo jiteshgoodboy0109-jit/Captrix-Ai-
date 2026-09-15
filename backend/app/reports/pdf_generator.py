@@ -50,9 +50,29 @@ def generate_pdf_report(
         if sym == "₹":
             sym = "INR "
 
+    from app.engine.output_validator import ReportConsistencyValidator
     if audit_report is None:
         from app.engine.auditor_engine import perform_full_financial_audit
         audit_report = perform_full_financial_audit(statements, ratios, currency_symbol=sym)
+
+    # Pre-Flight Validation and sanitization on exact render payload
+    render_payload = {
+        "company_name": company_name,
+        "statements": statements,
+        "ratios": ratios,
+        "corporate_finance": corp_fin,
+        "ai_report": ai_reports,
+        "audit_report": audit_report
+    }
+    render_payload = ReportConsistencyValidator.sanitize_audit_wording(render_payload)
+    ReportConsistencyValidator.validate_final_report_payload(render_payload, raise_on_error=False)
+    statements = render_payload.get("statements") or statements or {}
+    ratios = render_payload.get("ratios") or ratios or {}
+    corp_fin = render_payload.get("corporate_finance") or corp_fin or {}
+    ai_reports = render_payload.get("ai_report") or ai_reports or {}
+    audit_report_dict = render_payload.get("audit_report") or audit_report or {}
+    audit_report = audit_report_dict if isinstance(audit_report_dict, dict) else {}
+    assert audit_report is not None
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -113,7 +133,7 @@ def generate_pdf_report(
 
     # Cover Header
     story.append(Paragraph(f"Captrix AI Financial Analysis Report", title_style))
-    story.append(Paragraph(f"<b>Engagement Target:</b> {company_name} | <b>Analysis Date:</b> {datetime.datetime.now().strftime('%B %d, %Y')} | <b>Framework:</b> Deterministic Financial Verification (AI-generated analysis — not a statutory audit)", subtitle_style))
+    story.append(Paragraph(f"<b>Engagement Target:</b> {company_name} | <b>Analysis Date:</b> {datetime.datetime.now().strftime('%B %d, %Y')} | <b>Framework:</b> Deterministic Financial Verification & Ledger Analysis", subtitle_style))
     story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor("#0284C7"), spaceAfter=10))
 
     # 1. Financial Analysis & Data Validation Findings Card
@@ -141,9 +161,9 @@ def generate_pdf_report(
 
     op_card_data = [
         [Paragraph(f"<b>FINANCIAL ANALYSIS FINDINGS: {op_title.upper()}</b>", ParagraphStyle('OpH', parent=body_style, fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor(op_border)))],
-        [Paragraph(f"<b>Classification:</b> {op_tag} | <b>Framework:</b> Deterministic Reconciliation | <b>Sign-Off:</b> {opinion_obj.get('auditor_signature', 'Captrix Financial Analysis Engine')}", body_style)],
+        [Paragraph(f"<b>Classification:</b> {op_tag} | <b>Framework:</b> Deterministic Reconciliation | <b>Analysis Engine:</b> {opinion_obj.get('auditor_signature', 'Captrix Financial Analysis Engine')}", body_style)],
         [Paragraph(op_summary, body_style)],
-        [Paragraph("<i>Notice: AI-generated analysis — not a statutory audit. This document provides quantitative financial intelligence and deterministic ledger verification.</i>", ParagraphStyle('Discl', parent=body_style, fontSize=7, textColor=colors.HexColor("#64748B")))]
+        [Paragraph("<i>Notice: Automated financial intelligence report. This document provides quantitative financial analysis and deterministic ledger verification.</i>", ParagraphStyle('Discl', parent=body_style, fontSize=7, textColor=colors.HexColor("#64748B")))]
     ]
     t_op = Table(op_card_data, colWidths=[540])
     t_op.setStyle(TableStyle([
@@ -485,6 +505,36 @@ def generate_pdf_report(
             ('ALIGN', (4,0), (4,-1), 'CENTER'),
         ]))
         story.append(t_ratios)
+        story.append(Spacer(1, 12))
+
+    # 7b. Working Capital & Cash Conversion Cycle
+    wcc = corp_fin.get("working_capital_cycle", {}) if isinstance(corp_fin, dict) else {}
+    ccc_val = wcc.get("cash_conversion_cycle")
+    if ccc_val is not None:
+        story.append(Paragraph("Working Capital & Cash Conversion Cycle", h2_style))
+        is_approx = wcc.get("is_approximation", False)
+        ccc_label = "Approximate Cash Conversion Cycle" if is_approx else "Cash Conversion Cycle"
+        ccc_basis = "Ending Balances Used (multi-period averages unavailable in source schedules)" if is_approx else "Average Balances Used"
+        wcc_rows = [
+            ["Operational Metric", "Cycle Duration", "Calculation Methodology & Basis"],
+            ["Days Sales Outstanding (DSO)", f"{wcc.get('days_sales_outstanding_dso', '-')} days", "Receivables collection duration: (Receivables / Revenue) * 365"],
+            ["Days Inventory Outstanding (DIO)", f"{wcc.get('days_inventory_outstanding_dio', '-')} days", "Inventory holding duration: (Inventory / COGS) * 365"],
+            ["Days Payable Outstanding (DPO)", f"{wcc.get('days_payable_outstanding_dpo', '-')} days", "Payables payment duration: (Payables / COGS) * 365"],
+            ["Operating Cycle", f"{wcc.get('operating_cycle', '-')} days", "Operating Cycle: DIO + DSO"],
+            [ccc_label, f"{ccc_val:.1f} days" if isinstance(ccc_val, (int, float)) else f"{ccc_val} days", ccc_basis],
+        ]
+        t_wcc = Table(wcc_rows, colWidths=[180, 90, 270])
+        t_wcc.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#0284C7')),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 7.5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+            ('ALIGN', (1,0), (1,-1), 'CENTER'),
+        ]))
+        story.append(t_wcc)
         story.append(Spacer(1, 12))
 
     # 8. AI Recommendations (Evidence-Filtered)

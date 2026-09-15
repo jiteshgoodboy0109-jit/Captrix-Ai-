@@ -12,7 +12,7 @@ Validates:
 """
 
 import io
-import openpyxl
+import openpyxl  # type: ignore
 import pypdf
 import pytest
 from app.engine.ratio_engine import RatioEngine, verify_ratio_reproducibility
@@ -324,24 +324,24 @@ def test_unseen_third_corporate_profile_retail_chain():
     stmts = generate_financial_statements(retail_items)
     ratios = calculate_financial_ratios(stmts)
     corp_fin = calculate_corporate_finance(stmts, ratios)
-    audit = perform_full_financial_audit(retail_items, ratios)
+    audit = perform_full_financial_audit(stmts, ratios)
     ai_rep = generate_ai_insights(stmts, ratios, corp_fin)
 
     # 1. Ratios validation
     solv = ratios["solvency"]
     de = solv["debt_to_equity"]
-    assert "Interest-bearing Debt / Equity" in de["formula"]
+    assert de["formula"] == "Interest-Bearing Debt / Shareholders' Equity"
     assert de["is_calculable"] is True
     assert de["reproducible"] is True
 
     le = solv["liabilities_to_equity"]
-    assert "Total Liabilities / Equity" in le["formula"]
+    assert le["formula"] == "Total Liabilities / Shareholders' Equity"
     assert le["value"] > de["value"]
 
     liq = ratios["liquidity"]
     nwc = liq["working_capital_ratio"]
     assert nwc["name"] == "Net Working Capital to Revenue"
-    assert "(Net Working Capital / Revenue) * 100" in nwc["formula"]
+    assert nwc["formula"] == "(Current Assets - Current Liabilities) / Revenue"
     assert nwc["reproducible"] is True
 
     # 2. Pre-flight output validation
@@ -355,3 +355,122 @@ def test_unseen_third_corporate_profile_retail_chain():
     validated = OutputValidator.validate_and_filter_payload(payload, retail_items)
     assert validated["consistency_report"]["pre_flight_status"] == "PASS"
     assert len(validated["consistency_report"]["prohibited_terms_found"]) == 0
+
+
+def test_complete_pdf_and_excel_prohibited_terms_deep_scan():
+    """
+    Scans the exact PDF and Excel output files generated for an unseen enterprise target.
+    Verifies that NONE of the prohibited statutory audit terms ever appear in the generated files.
+    """
+    items = build_synthetic_manufacturing_company()
+    stmts = generate_financial_statements(items)
+    ratios = calculate_financial_ratios(stmts)
+    corp_fin = calculate_corporate_finance(stmts, ratios)
+    audit = perform_full_financial_audit(stmts, ratios)
+    ai_rep = generate_ai_insights(stmts, ratios, corp_fin)
+
+    # Render actual PDF
+    pdf_bytes = generate_pdf_report("Apex Dynamics International", stmts, ratios, corp_fin, ai_rep, currency="USD", audit_report=audit)
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    full_pdf_text = ""
+    for page in reader.pages:
+        full_pdf_text += page.extract_text() + "\n"
+    pdf_lower = full_pdf_text.lower()
+
+    prohibited_checklist = [
+        "statutory financial audit",
+        "auditor's opinion",
+        "auditor opinion",
+        "audit conclusion",
+        "unqualified",
+        "clean bill of health",
+        "isa / us gaas",
+        "isa 320",
+        "isa 700",
+        "isa 705",
+        "present fairly",
+        "financial statements present fairly",
+        "ai audit analysis",
+        "statutory audit",
+        "auditor sign-off",
+        "certified opinion"
+    ]
+
+    for term in prohibited_checklist:
+        assert term not in pdf_lower, f"Prohibited audit term '{term}' was found in rendered PDF text!"
+
+    # Render actual Excel
+    excel_bytes = generate_excel_report("Apex Dynamics International", stmts, ratios, corp_fin, ai_rep, audit)
+    wb = openpyxl.load_workbook(io.BytesIO(excel_bytes))
+    for sname in wb.sheetnames:
+        ws = wb[sname]
+        for row in ws.iter_rows(values_only=True):
+            for val in row:
+                if val and isinstance(val, str):
+                    v_low = val.lower()
+                    for term in prohibited_checklist:
+                        assert term not in v_low, f"Prohibited audit term '{term}' was found in Excel cell in sheet '{sname}': '{val}'"
+
+
+def test_statement_reconciliation_and_source_preservation():
+    """
+    Tests that:
+    1. P&L totals are correct (Gross Profit = Rev - COGS, Net Income = PBT - Tax)
+    2. Balance Sheet reconciles
+    3. Cash Flow reconciliation is preserved
+    4. Source values are never silently changed
+    """
+    items = build_synthetic_manufacturing_company()
+    stmts = generate_financial_statements(items)
+
+    inc = stmts["income_statement"]
+    assert inc["gross_profit"] == inc["revenue_from_operations"] - inc["cost_of_goods_sold"]
+    assert inc["ebit"] == inc["gross_profit"] - inc["operating_expenses"] - inc["depreciation_amortization"]
+
+    bs = stmts["balance_sheet"]
+    val_rep = stmts.get("validation_report", {})
+    assert val_rep.get("balance_sheet_check") == "PASS"
+    eq_val = bs.get("equity", {}).get("total_equity") or bs.get("total_equity")
+    assert bs["total_assets"] == (bs["total_liabilities"] + eq_val)
+
+    # Verify source values are untouched
+    for it in items:
+        # Check that net_amount matches an item in normalized items
+        found = any(n.get("account_name") == it["account_name"] and abs(n.get("net_amount", 0) - it["net_amount"]) < 0.01 for n in stmts.get("normalized_items", []))
+        assert found, f"Source line item '{it['account_name']}' was altered or missing from normalized statements!"
+
+
+def test_ccc_approximation_across_api_pdf_excel():
+    """
+    Tests that CCC approximation status exists in underlying data model, API response, PDF and Excel output.
+    """
+    items = build_synthetic_manufacturing_company()
+    stmts = generate_financial_statements(items)
+    ratios = calculate_financial_ratios(stmts)
+    corp_fin = calculate_corporate_finance(stmts, ratios)
+    wcc = corp_fin["working_capital_cycle"]
+
+    # 1. Underlying data model
+    assert wcc.get("is_approximation") is True
+    assert wcc.get("metric_name") == "Approximate Cash Conversion Cycle"
+    assert "ending balance" in wcc.get("approximation_status", "").lower()
+
+    # 2. PDF rendering
+    pdf_bytes = generate_pdf_report("Apex Dynamics", stmts, ratios, corp_fin, {}, currency="USD")
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    pdf_text = "".join(page.extract_text() for page in reader.pages)
+    assert "Approximate Cash Conversion Cycle" in pdf_text
+    assert "Ending Balances Used" in pdf_text
+
+    # 3. Excel rendering
+    excel_bytes = generate_excel_report("Apex Dynamics", stmts, ratios, corp_fin, {})
+    wb = openpyxl.load_workbook(io.BytesIO(excel_bytes))
+    assert "Working Capital & CCC" in wb.sheetnames
+    ws = wb["Working Capital & CCC"]
+    found_approx_ccc = False
+    for row in ws.iter_rows(values_only=True):
+        for val in row:
+            if val and "Approximate Cash Conversion Cycle" in str(val):
+                found_approx_ccc = True
+    assert found_approx_ccc, "Excel sheet 'Working Capital & CCC' missing 'Approximate Cash Conversion Cycle'"
+

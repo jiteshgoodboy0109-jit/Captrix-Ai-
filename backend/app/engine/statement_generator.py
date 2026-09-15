@@ -432,11 +432,13 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     valid_liabilities = [i for i in liabilities if not is_summary_or_total_row(str(i.get("account_name")))]
     payables_items = [i for i in valid_liabilities if any(k in str(i.get("account_name")).lower() for k in ["trade payable", "trade payables", "trade and other payables", "accounts payable", "creditor", "creditors"])]
     other_cl_items = [i for i in valid_liabilities if any(k in str(i.get("account_name")).lower() for k in ["other current liab", "other current liability", "other current liabilities", "accrued"]) or ("other" in str(i.get("account_name")).lower() and "current" in str(i.get("account_name")).lower() and "non-current" not in str(i.get("account_name")).lower() and "non current" not in str(i.get("account_name")).lower() and "asset" not in str(i.get("account_name")).lower())]
-    short_term_borrowings_items = [i for i in valid_liabilities if any(k in str(i.get("account_name")).lower() for k in ["short-term borrowing", "short term borrowing", "short-term borrowings", "short term borrowings", "short term loan", "short-term loan", "current borrowing", "short-term debt", "short term debt", "st borrowing", "st borrowings", "st debt"]) and "other" not in str(i.get("account_name")).lower()]
     
-    trade_payables = sum(abs(i.get("net_amount", 0.0)) for i in payables_items) if payables_items else None
-    other_current_liabilities = sum(abs(i.get("net_amount", 0.0)) for i in other_cl_items) if other_cl_items else None
-    short_term_borrowings = sum(abs(i.get("net_amount", 0.0)) for i in short_term_borrowings_items) if short_term_borrowings_items else None
+    short_term_borrowings_items = [
+        i for i in valid_liabilities 
+        if (any(k in str(i.get("account_name")).lower() for k in ["short-term borrowing", "short term borrowing", "short-term borrowings", "short term borrowings", "short term loan", "short-term loan", "current borrowing", "short-term debt", "short term debt", "st borrowing", "st borrowings", "st debt", "credit line", "revolving credit", "working capital loan", "working capital"])
+            or (("short-term" in str(i.get("account_name")).lower() or "short term" in str(i.get("account_name")).lower() or "current" in str(i.get("account_name")).lower()) and ("loan" in str(i.get("account_name")).lower() or "debt" in str(i.get("account_name")).lower() or "borrow" in str(i.get("account_name")).lower())))
+        and "other" not in str(i.get("account_name")).lower()
+    ]
     
     notes_p_items = [i for i in valid_liabilities if "notes payable" in str(i.get("account_name")).lower() and "long term" not in str(i.get("account_name")).lower() and "lt" not in str(i.get("account_name")).lower()]
     wages_p_items = [i for i in valid_liabilities if "wages payable" in str(i.get("account_name")).lower() or "salary payable" in str(i.get("account_name")).lower() or "payroll payable" in str(i.get("account_name")).lower()]
@@ -444,6 +446,36 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     tax_p_items = [i for i in valid_liabilities if "tax payable" in str(i.get("account_name")).lower()]
     unearned_rev_items = [i for i in valid_liabilities if "unearned revenue" in str(i.get("account_name")).lower() or "deferred revenue" in str(i.get("account_name")).lower()]
 
+    long_term_borrowings_items = [
+        i for i in valid_liabilities 
+        if (any(k in str(i.get("account_name")).lower() for k in ["long-term borrowing", "long term borrowing", "long-term borrowings", "long term borrowings", "long term debt", "long-term debt", "non-current debt", "long-term liabilities", "long term liabilities", "non-current liabilities", "non current liabilities", "lt borrowing", "lt borrowings", "lt debt", "term debt", "term loan"])
+            or (("long-term" in str(i.get("account_name")).lower() or "long term" in str(i.get("account_name")).lower() or "non-current" in str(i.get("account_name")).lower() or "non current" in str(i.get("account_name")).lower()) and ("loan" in str(i.get("account_name")).lower() or "debt" in str(i.get("account_name")).lower() or "borrow" in str(i.get("account_name")).lower())))
+        and "other" not in str(i.get("account_name")).lower()
+    ]
+    other_ncl_items = [i for i in valid_liabilities if any(k in str(i.get("account_name")).lower() for k in ["other non-current liab", "other non current liab", "other non-current liabilities", "other non current liabilities", "other non-current liability", "other non current liability", "other non-current debt", "other non current debt"]) or ("other" in str(i.get("account_name")).lower() and ("non-current" in str(i.get("account_name")).lower() or "non current" in str(i.get("account_name")).lower()) and "asset" not in str(i.get("account_name")).lower())]
+    notes_p_lt_items = [i for i in valid_liabilities if "notes payable" in str(i.get("account_name")).lower() and ("long term" in str(i.get("account_name")).lower() or "lt" in str(i.get("account_name")).lower() or "non current" in str(i.get("account_name")).lower())]
+    bonds_p_items = [i for i in valid_liabilities if "bonds payable" in str(i.get("account_name")).lower()]
+
+    # Ensure unclassified liabilities are not dropped
+    classified_cl_set = set(id(x) for x in payables_items + other_cl_items + short_term_borrowings_items + notes_p_items + wages_p_items + interest_p_items + tax_p_items + unearned_rev_items)
+    classified_ltl_set = set(id(x) for x in long_term_borrowings_items + other_ncl_items + notes_p_lt_items + bonds_p_items)
+    
+    unclassified_liabilities = [i for i in valid_liabilities if id(i) not in classified_cl_set and id(i) not in classified_ltl_set]
+    for un_liab in unclassified_liabilities:
+        act_type = str(un_liab.get("account_type", "")).upper()
+        nm = str(un_liab.get("account_name", "")).lower()
+        if "CURRENT" in act_type and "NON" not in act_type:
+            other_cl_items.append(un_liab)
+        elif "LONG" in act_type or "NON_CURRENT" in act_type or "NON-CURRENT" in act_type:
+            other_ncl_items.append(un_liab)
+        elif "current" in nm:
+            other_cl_items.append(un_liab)
+        else:
+            other_ncl_items.append(un_liab)
+
+    trade_payables = sum(abs(i.get("net_amount", 0.0)) for i in payables_items) if payables_items else None
+    other_current_liabilities = sum(abs(i.get("net_amount", 0.0)) for i in other_cl_items) if other_cl_items else None
+    short_term_borrowings = sum(abs(i.get("net_amount", 0.0)) for i in short_term_borrowings_items) if short_term_borrowings_items else None
     notes_payable = sum(abs(i.get("net_amount", 0.0)) for i in notes_p_items) if notes_p_items else None
     wages_payable = sum(abs(i.get("net_amount", 0.0)) for i in wages_p_items) if wages_p_items else None
     interest_payable = sum(abs(i.get("net_amount", 0.0)) for i in interest_p_items) if interest_p_items else None
@@ -457,11 +489,6 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
         if cl_raw > 0:
             total_current_liabilities = cl_raw
         
-    long_term_borrowings_items = [i for i in valid_liabilities if any(k in str(i.get("account_name")).lower() for k in ["long-term borrowing", "long term borrowing", "long-term borrowings", "long term borrowings", "long term debt", "long-term debt", "non-current debt", "long-term liabilities", "long term liabilities", "non-current liabilities", "non current liabilities", "lt borrowing", "lt borrowings", "lt debt"]) and "other" not in str(i.get("account_name")).lower()]
-    other_ncl_items = [i for i in valid_liabilities if any(k in str(i.get("account_name")).lower() for k in ["other non-current liab", "other non current liab", "other non-current liabilities", "other non current liabilities", "other non-current liability", "other non current liability", "other non-current debt", "other non current debt"]) or ("other" in str(i.get("account_name")).lower() and ("non-current" in str(i.get("account_name")).lower() or "non current" in str(i.get("account_name")).lower()) and "asset" not in str(i.get("account_name")).lower())]
-    notes_p_lt_items = [i for i in valid_liabilities if "notes payable" in str(i.get("account_name")).lower() and ("long term" in str(i.get("account_name")).lower() or "lt" in str(i.get("account_name")).lower() or "non current" in str(i.get("account_name")).lower())]
-    bonds_p_items = [i for i in valid_liabilities if "bonds payable" in str(i.get("account_name")).lower()]
-
     long_term_borrowings = sum(abs(i.get("net_amount", 0.0)) for i in long_term_borrowings_items) if long_term_borrowings_items else None
     other_non_current_liabilities = sum(abs(i.get("net_amount", 0.0)) for i in other_ncl_items) if other_ncl_items else None
     notes_payable_lt = sum(abs(i.get("net_amount", 0.0)) for i in notes_p_lt_items) if notes_p_lt_items else None
@@ -718,7 +745,72 @@ def generate_statements_for_year(latest_items: List[Dict[str, Any]], target_year
     validation_report["cash_flow_check"] = cf_status
     validation_report["cash_flow_explanation"] = cf_explanation
 
-    # 6. Ledger Summary
+    # 6. Authoritative Formula Specifications for Financial Statements
+    doc_curr = latest_items[0].get("currency", "NOT_DETERMINED") if latest_items else "NOT_DETERMINED"
+    authoritative_formulas = {
+        "gross_profit": {
+            "formula_definition": "Revenue - Cost of Goods Sold",
+            "required_inputs": ["Revenue", "Cost of Goods Sold"],
+            "calculated_value": calc_gp,
+            "value": gross_profit,
+            "units": doc_curr,
+            "source_fields": [str(i.get("account_name")) for i in revenues[:2]] + [str(i.get("account_name")) for i in cogs_items[:2]],
+            "calculation_status": gross_profit_status if gross_profit is not None else ("INPUTS_MISSING" if (revenue_from_operations is None or total_cogs is None) else "NOT_CALCULABLE"),
+            "explanation": f"Gross profit calculated as Revenue ({calc_total_rev}) minus Cost of Goods Sold ({total_cogs})." if calc_gp is not None else "Gross profit not calculable: Revenue or COGS missing in source schedules."
+        },
+        "operating_profit": {
+            "formula_definition": "Gross Profit - Operating Expenses",
+            "required_inputs": ["Gross Profit", "Operating Expenses"],
+            "calculated_value": calc_ebit,
+            "value": profit_from_operations,
+            "units": doc_curr,
+            "source_fields": ["Gross Profit"] + [str(i.get("account_name")) for i in opex_items[:3]],
+            "calculation_status": operating_profit_status if profit_from_operations is not None else "NOT_CALCULABLE",
+            "explanation": "Operating Profit (EBIT) derived from Gross Profit minus Operating Expenses." if calc_ebit is not None else "Operating profit not separately reported or derived in source schedules."
+        },
+        "pbt": {
+            "formula_definition": "Operating Profit + Other Income + Finance Income - Finance Costs",
+            "required_inputs": ["Operating Profit", "Finance Costs"],
+            "calculated_value": calc_pbt,
+            "value": ebt,
+            "units": doc_curr,
+            "source_fields": ["Operating Profit", "Other Income", "Finance Costs"],
+            "calculation_status": pbt_status if ebt is not None else "NOT_CALCULABLE",
+            "explanation": "Profit Before Tax reflecting core operations, other income, and finance costs." if calc_pbt is not None else "Profit Before Tax not reported in source schedules."
+        },
+        "net_profit": {
+            "formula_definition": "Profit Before Tax - Income Tax Expense",
+            "required_inputs": ["Profit Before Tax", "Income Tax Expense"],
+            "calculated_value": calc_net_income,
+            "value": net_income,
+            "units": doc_curr,
+            "source_fields": ["Profit Before Tax", "Taxation Expense"],
+            "calculation_status": net_income_reconciliation_status if net_income is not None else "NOT_CALCULABLE",
+            "explanation": "Net Income after deducting corporate taxation expense." if (calc_net_income is not None or net_income is not None) else "Net income not reported in source schedules."
+        },
+        "balance_sheet_identity": {
+            "formula_definition": "Total Assets = Total Liabilities + Total Shareholders' Equity",
+            "required_inputs": ["Total Assets", "Total Liabilities", "Total Shareholders' Equity"],
+            "calculated_value": tot_liab_eq_val,
+            "value": total_assets,
+            "units": doc_curr,
+            "source_fields": ["Total Assets", "Total Liabilities", "Total Shareholders' Equity"],
+            "calculation_status": bs_status,
+            "explanation": "Fundamental accounting identity: Total Assets must equal Liabilities plus Equity."
+        }
+    }
+    income_statement["authoritative_formulas"] = {
+        "gross_profit": authoritative_formulas["gross_profit"],
+        "operating_profit": authoritative_formulas["operating_profit"],
+        "pbt": authoritative_formulas["pbt"],
+        "net_profit": authoritative_formulas["net_profit"]
+    }
+    balance_sheet["authoritative_formulas"] = {
+        "balance_sheet_identity": authoritative_formulas["balance_sheet_identity"]
+    }
+    validation_report["authoritative_formulas"] = authoritative_formulas
+
+    # 7. Ledger Summary
     ledger_summary = {
         "total_accounts": len(latest_items),
         "revenue_count": len(revenues),

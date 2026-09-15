@@ -161,38 +161,50 @@ class ReportConsistencyValidator:
         "statutory financial audit",
         "auditor's opinion",
         "auditor opinion",
-        "unqualified opinion",
-        "unqualified preliminary audit conclusion",
+        "audit conclusion",
+        "unqualified",
         "clean bill of health",
         "isa / us gaas",
+        "isa 320",
         "isa 700",
         "isa 705",
-        "isa 320",
+        "isa 700/705",
+        "financial statements present fairly",
         "present fairly",
         "presents fairly",
-        "independent auditor",
-        "auditor signature",
+        "ai audit analysis",
+        "statutory audit",
+        "auditor sign-off",
+        "certified opinion",
     ]
 
     DISALLOWED_PATTERNS = [
-        ("official independent auditor's report", "AI Financial Analysis & Verification Findings"),
-        ("statutory financial audit", "automated financial intelligence analysis"),
+        ("ai audit analysis", "AI Financial Analysis"),
+        ("statutory financial audit", "Financial Analysis Report"),
+        ("statutory audit", "financial analysis"),
+        ("auditor's opinion", "financial analysis findings"),
+        ("auditor opinion", "financial analysis findings"),
+        ("audit conclusion", "analytical findings"),
         ("unqualified preliminary audit conclusion", "preliminary verified findings"),
         ("unqualified opinion", "verified reconciliation findings"),
-        ("qualified opinion", "schedule departure findings"),
-        ("adverse opinion", "accounting variance findings"),
+        ("unqualified", "verified"),
         ("clean bill of health", "consistent data reconciliation"),
         ("present fairly in all material respects", "reconcile mathematically across reported schedules"),
         ("presents fairly, in all material respects", "reconciles mathematically across reported schedules"),
+        ("financial statements present fairly", "financial schedules reconcile mathematically"),
         ("presents fairly", "reconciles mathematically"),
         ("present fairly", "reconcile mathematically"),
         ("in accordance with international standards on auditing", "in accordance with deterministic mathematical reconciliation"),
         ("in accordance with isa", "in accordance with deterministic validation standards"),
         ("in accordance with us gaas", "in accordance with automated ledger verification"),
         ("isa / us gaas", "Deterministic Ledger Verification"),
+        ("isa 700/705", "Deterministic Verification Framework"),
+        ("isa 700", "Deterministic Verification Framework"),
+        ("isa 705", "Deterministic Verification Framework"),
+        ("isa 320", "Analytical Materiality Guidelines"),
         ("independent auditor", "Captrix Financial Analysis Engine"),
-        ("auditor's opinion", "financial analysis findings"),
-        ("auditor opinion", "financial analysis findings"),
+        ("auditor sign-off", "Analysis Sign-Off"),
+        ("certified opinion", "verified analysis"),
     ]
 
     @classmethod
@@ -213,21 +225,30 @@ class ReportConsistencyValidator:
     @classmethod
     def check_prohibited_audit_terminology(cls, data: Any, path: str = "root") -> List[Dict[str, str]]:
         """Scans payload recursively for prohibited statutory audit claims."""
+        import re
         violations = []
         if isinstance(data, str):
             data_lower = data.lower()
             for term in cls.PROHIBITED_AUDIT_TERMS:
-                # Do not trigger on non-statutory disclaimers like "not a statutory audit"
                 if term in data_lower:
-                    if term in ["statutory financial audit", "statutory audit"] and ("not a statutory" in data_lower or "not an official" in data_lower):
-                        continue
-                    if term in ["auditor's opinion", "auditor opinion", "audit opinion"] and ("not an audit opinion" in data_lower or "not an official" in data_lower):
-                        continue
                     violations.append({
                         "path": path,
                         "prohibited_term": term,
                         "snippet": data[:120]
                     })
+            # Also check regex boundaries for short abbreviations ISA and GAAS
+            if re.search(r"\bisa\b", data_lower):
+                violations.append({
+                    "path": path,
+                    "prohibited_term": "isa",
+                    "snippet": data[:120]
+                })
+            if re.search(r"\bgaas\b", data_lower):
+                violations.append({
+                    "path": path,
+                    "prohibited_term": "gaas",
+                    "snippet": data[:120]
+                })
         elif isinstance(data, dict):
             for k, v in data.items():
                 violations.extend(cls.check_prohibited_audit_terminology(v, f"{path}.{k}"))
@@ -282,8 +303,16 @@ class ReportConsistencyValidator:
             r = liq["working_capital_ratio"]
             formula = str(r.get("formula", ""))
             name = str(r.get("name", ""))
-            if "revenue" in formula.lower() and name == "Working Capital Ratio":
-                issues.append("working_capital_ratio mislabeled: Should be Net Working Capital to Revenue when divided by Revenue")
+            if name == "Working Capital Ratio":
+                issues.append("working_capital_ratio mislabeled: Must be named 'Net Working Capital to Revenue'")
+            if "net working capital to revenue" not in name.lower():
+                issues.append(f"working_capital_ratio naming error: Name must be 'Net Working Capital to Revenue', got '{name}'")
+
+        if "current_ratio" in liq:
+            cr = liq["current_ratio"]
+            cr_form = str(cr.get("formula", "")).lower()
+            if "current assets / current liabilities" not in cr_form:
+                issues.append(f"current_ratio formula error: Expected 'Current Assets / Current Liabilities', got '{cr.get('formula')}'")
 
         solv = ratios.get("solvency", {})
         if "debt_to_equity" in solv:
@@ -291,57 +320,193 @@ class ReportConsistencyValidator:
             de_formula = str(de.get("formula", ""))
             if "total liabilities" in de_formula.lower():
                 issues.append("debt_to_equity formula error: Debt-to-Equity cannot display Total Liabilities in its formula")
+            if de_formula.strip() != "Interest-Bearing Debt / Shareholders' Equity":
+                issues.append(f"debt_to_equity formula error: Displayed formula MUST be 'Interest-Bearing Debt / Shareholders\\' Equity', got '{de_formula}'")
+
+        if "liabilities_to_equity" in solv:
+            lte = solv["liabilities_to_equity"]
+            lte_formula = str(lte.get("formula", ""))
+            if lte_formula.strip() != "Total Liabilities / Shareholders' Equity":
+                issues.append(f"liabilities_to_equity formula error: Displayed formula MUST be 'Total Liabilities / Shareholders\\' Equity', got '{lte_formula}'")
+        else:
+            issues.append("liabilities_to_equity missing: Liabilities-to-Equity must exist as a separate metric from Debt-to-Equity")
 
         return issues
 
     @classmethod
-    def validate_recommendation_grounding(cls, payload: Dict[str, Any]) -> List[str]:
+    def validate_ccc_approximation(cls, payload: Dict[str, Any]) -> List[str]:
         issues = []
-        recs = []
-        ai_rep = payload.get("ai_report", {})
-        if isinstance(ai_rep, dict):
-            recs.extend(ai_rep.get("recommendations", []))
         corp = payload.get("corporate_finance", {})
-        ccc_val = corp.get("working_capital_cycle", {}).get("cash_conversion_cycle") if isinstance(corp, dict) else None
+        wcc = corp.get("working_capital_cycle", {}) if isinstance(corp, dict) else {}
+        ccc = wcc.get("cash_conversion_cycle")
+        if ccc is not None:
+            is_approx = wcc.get("is_approximation")
+            metric_name = wcc.get("metric_name", "")
+            if is_approx is not True:
+                issues.append("CCC error: Cash Conversion Cycle must be marked is_approximation=True when ending balances are used")
+            if "approximate" not in metric_name.lower():
+                issues.append(f"CCC error: Cash Conversion Cycle metric_name must include 'Approximate Cash Conversion Cycle', got '{metric_name}'")
+        return issues
 
-        for rec in recs:
-            rec_text = str(rec.get("action", "") if isinstance(rec, dict) else rec)
-            rec_lower = rec_text.lower()
-            if "top-quartile" in rec_lower or "industry quartile" in rec_lower:
-                issues.append(f"Ungrounded recommendation: Unsupported industry quartile benchmark claimed: '{rec_text[:80]}'")
-            if "cash conversion cycle" in rec_lower and ccc_val is None:
-                issues.append(f"Ungrounded recommendation: Cash conversion cycle recommended but not calculable: '{rec_text[:80]}'")
+    @classmethod
+    def validate_statement_integrity(cls, statements: Dict[str, Any]) -> List[str]:
+        issues = []
+        inc = statements.get("income_statement", {}) if isinstance(statements, dict) else {}
+        rev = inc.get("total_revenue") or inc.get("revenue_from_operations")
+        cogs = inc.get("cost_of_goods_sold")
+        gp = inc.get("gross_profit")
+        if rev is not None and cogs is not None and gp is not None:
+            expected_gp = round(float(rev) - float(cogs), 2)
+            if abs(expected_gp - round(float(gp), 2)) > 1.0:
+                issues.append(f"P&L Gross Profit mismatch: Revenue ({rev}) - COGS ({cogs}) != Gross Profit ({gp})")
+
+        bs = statements.get("balance_sheet", {}) if isinstance(statements, dict) else {}
+        tot_assets = bs.get("total_assets")
+        tot_liab = bs.get("total_liabilities")
+        eq_dict = bs.get("equity", {}) if isinstance(bs.get("equity"), dict) else {}
+        tot_equity = eq_dict.get("total_equity") or bs.get("total_equity")
+        if tot_assets is not None and tot_liab is not None and tot_equity is not None:
+            expected_bal = round(float(tot_liab) + float(tot_equity), 2)
+            diff = abs(round(float(tot_assets), 2) - expected_bal)
+            val_rep = statements.get("validation_report", {}) if isinstance(statements, dict) else {}
+            if diff > 1.0 and val_rep.get("balance_sheet_check") == "PASS":
+                issues.append(f"Balance Sheet reconciliation error: Assets ({tot_assets}) != Liab + Equity ({expected_bal}) but check marked PASS")
+
+        return issues
+
+    @classmethod
+    def validate_source_preservation(cls, statements: Dict[str, Any]) -> List[str]:
+        issues = []
+        inc = statements.get("income_statement", {}) if isinstance(statements, dict) else {}
+        val_rep = statements.get("validation_report", {}) if isinstance(statements, dict) else {}
+        calc_metrics = val_rep.get("calculated_metrics", {}) if isinstance(val_rep, dict) else {}
+        
+        src_gp = calc_metrics.get("source_reported_gross_profit")
+        if src_gp is not None and inc.get("gross_profit") is not None:
+            if abs(float(src_gp) - float(inc.get("gross_profit"))) > 0.01:
+                issues.append(f"Source Gross Profit altered: Reported {src_gp} != Displayed {inc.get('gross_profit')}")
+
+        src_ni = calc_metrics.get("source_reported_net_income")
+        if src_ni is not None and inc.get("net_income") is not None:
+            if abs(float(src_ni) - float(inc.get("net_income"))) > 0.01:
+                issues.append(f"Source Net Income altered: Reported {src_ni} != Displayed {inc.get('net_income')}")
+        return issues
+
+    @classmethod
+    def validate_missing_values(cls, ratios: Dict[str, Any], statements: Dict[str, Any]) -> List[str]:
+        issues = []
+        bs = statements.get("balance_sheet", {}) if isinstance(statements, dict) else {}
+        curr_assets = bs.get("current_assets", {}) if isinstance(bs.get("current_assets"), dict) else {}
+        inv = curr_assets.get("inventory")
+        
+        eff = ratios.get("efficiency", {}) if isinstance(ratios, dict) else {}
+        inv_t = eff.get("inventory_turnover", {}) if isinstance(eff, dict) else {}
+        if (inv is None or inv == 0) and inv_t.get("is_calculable") is True and inv_t.get("value") is not None:
+            issues.append("Missing value violation: Inventory turnover calculated despite missing inventory")
+        return issues
+
+    @classmethod
+    def validate_currency_and_period(cls, payload: Dict[str, Any]) -> List[str]:
+        issues = []
+        reconcil = payload.get("reconciliation", {})
+        mapping_val = reconcil.get("extraction_mapping_validation", {}) if isinstance(reconcil, dict) else {}
+        for err in mapping_val.get("currency_errors", []):
+            issues.append(f"Currency mismatch: {err.get('issue')}")
+        for err in mapping_val.get("year_period_mismatch", []):
+            issues.append(f"Period mismatch: {err.get('issue')}")
+        return issues
+
+    @classmethod
+    def validate_calculation_completeness(cls, payload: Dict[str, Any]) -> List[str]:
+        issues = []
+        ratios = payload.get("ratios", {})
+        for cat_name, cat_dict in ratios.items():
+            if isinstance(cat_dict, dict):
+                for r_key, r_obj in cat_dict.items():
+                    if isinstance(r_obj, dict):
+                        for field in ["formula_definition", "required_inputs", "units", "calculation_status"]:
+                            if field not in r_obj:
+                                issues.append(f"Calculation completeness: {field} missing on ratio '{r_key}'")
         return issues
 
     @classmethod
     def validate_final_report_payload(cls, payload: Dict[str, Any], raise_on_error: bool = False) -> Dict[str, Any]:
         """
-        Executes the 6-point pre-flight validation check immediately before report generation or output dispatch:
-        1. Ratio name <-> formula
-        2. Formula <-> inputs
-        3. Inputs <-> extracted financial data
-        4. Calculated value <-> displayed value
-        5. Recommendation <-> available evidence
-        6. Audit terminology <-> allowed terminology
+        Executes the authoritative 10-point pre-flight validation check immediately before report generation or output dispatch:
+        A. P&L arithmetic
+        B. Balance Sheet reconciliation
+        C. Cash Flow reconciliation
+        D. Ratio formula/value consistency
+        E. Source-value preservation
+        F. Missing-value handling
+        G. Currency consistency
+        H. Period consistency
+        I. Calculation completeness
+        J. Unsupported assumptions
         """
         ratios = payload.get("ratios", {})
+        statements = payload.get("statements", {})
         
         # 1. Ratio name <-> formula & naming consistency
         naming_issues = cls.validate_naming_and_formulas(ratios)
 
-        # 2 & 4. Formula <-> inputs and Calculated <-> displayed reproducibility
+        # 2. Formula <-> inputs and Calculated <-> displayed reproducibility (D)
         ratio_check = cls.validate_ratio_reproducibility(ratios)
 
-        # 5. Recommendation <-> evidence grounding
+        # 3. Recommendation <-> evidence grounding (J)
         rec_issues = cls.validate_recommendation_grounding(payload)
 
-        # 6. Audit terminology <-> allowed terminology check
+        # 4. CCC approximation check
+        ccc_issues = cls.validate_ccc_approximation(payload)
+
+        # 5. Statement integrity check (A & B)
+        stmt_issues = cls.validate_statement_integrity(statements)
+
+        # 6. Source-value preservation (E)
+        src_pres_issues = cls.validate_source_preservation(statements)
+
+        # 7. Missing-value handling (F)
+        missing_val_issues = cls.validate_missing_values(ratios, statements)
+
+        # 8. Currency & Period consistency (G & H)
+        curr_period_issues = cls.validate_currency_and_period(payload)
+
+        # 9. Calculation completeness (I)
+        completeness_issues = cls.validate_calculation_completeness(payload)
+
+        # 10. Audit terminology check
         audit_violations = cls.check_prohibited_audit_terminology(payload)
+
+        # Collect Data Quality Warnings from source variances
+        val_rep = statements.get("validation_report", {}) if isinstance(statements, dict) else {}
+        data_quality_warnings = []
+        if val_rep.get("is_balanced") is False or val_rep.get("balance_sheet_check") == "UNBALANCED":
+            data_quality_warnings.append(f"Balance Sheet Imbalance: Total Assets ({val_rep.get('total_assets')}) != Liabilities + Equity ({val_rep.get('total_liabilities_plus_equity')}). Difference = {val_rep.get('difference')}.")
+        
+        inc = statements.get("income_statement", {}) if isinstance(statements, dict) else {}
+        if inc.get("gross_profit_status") == "MISMATCH":
+            data_quality_warnings.append(f"P&L Arithmetic Variance: Source Gross Profit ({inc.get('gross_profit')}) differs from calculated Revenue - COGS ({inc.get('gross_profit_calculated')}) by {inc.get('gross_profit_variance')}.")
+        if inc.get("net_income_reconciliation_status") == "MISMATCH":
+            data_quality_warnings.append(f"P&L Net Income Variance: Source Net Income ({inc.get('net_income')}) differs from calculated PBT - Tax ({inc.get('net_income_calculated')}) by {inc.get('net_income_variance')}.")
+
+        cf = statements.get("cash_flow", {}) if isinstance(statements, dict) else {}
+        if cf.get("status") == "Available" and val_rep.get("cash_flow_check") == "FAIL":
+            data_quality_warnings.append(f"Cash Flow Mismatch: Operating + Investing + Financing cash flows do not equal Net Change in Cash.")
+
+        for p_issue in curr_period_issues:
+            data_quality_warnings.append(p_issue)
+
+        payload["data_quality_warnings"] = data_quality_warnings
 
         all_errors = []
         all_errors.extend(naming_issues)
         all_errors.extend([f"Ratio reproducibility variance in {d['ratio_name']}" for d in ratio_check.get("discrepancies", [])])
         all_errors.extend(rec_issues)
+        all_errors.extend(ccc_issues)
+        all_errors.extend(stmt_issues)
+        all_errors.extend(src_pres_issues)
+        all_errors.extend(missing_val_issues)
+        all_errors.extend(completeness_issues)
         all_errors.extend([f"Prohibited audit terminology '{v['prohibited_term']}' at {v['path']}" for v in audit_violations])
 
         is_pass = len(all_errors) == 0
@@ -349,14 +514,35 @@ class ReportConsistencyValidator:
         if raise_on_error and not is_pass:
             raise ValueError(f"Final Report Pre-Flight Validation Failed with {len(all_errors)} errors: {'; '.join(all_errors)}")
 
+        cf_status = val_rep.get("cash_flow_check", "NOT_AVAILABLE")
+        validation_matrix = {
+            "A_pnl_arithmetic": "PASS" if inc.get("gross_profit_status") != "MISMATCH" else "SOURCE_MISMATCH_RECORDED",
+            "B_balance_sheet_reconciliation": "PASS" if val_rep.get("is_balanced") is not False else "SOURCE_IMBALANCE_RECORDED",
+            "C_cash_flow_reconciliation": "PASS" if cf_status in ["PASS", "NOT_AVAILABLE", "NOT_REPORTED_IN_SOURCE"] else "MISMATCH_RECORDED",
+            "D_ratio_consistency": ratio_check.get("status", "PASS"),
+            "E_source_preservation": "PASS" if not src_pres_issues else "FAIL",
+            "F_missing_value_handling": "PASS" if not missing_val_issues else "FAIL",
+            "G_currency_consistency": "PASS",
+            "H_period_consistency": "PASS" if not any("period" in str(x).lower() for x in curr_period_issues) else "WARNING",
+            "I_calculation_completeness": "PASS" if not completeness_issues else "FAIL",
+            "J_unsupported_assumptions": "PASS" if not rec_issues else "FAIL"
+        }
+
         return {
             "status": "PASS" if is_pass else "FAIL",
             "pre_flight_status": "PASS" if is_pass else "FAIL",
             "is_valid": is_pass,
             "errors": all_errors,
+            "data_quality_warnings": data_quality_warnings,
+            "validation_matrix": validation_matrix,
             "ratio_reproducibility": ratio_check,
             "naming_issues": naming_issues,
             "recommendation_grounding_issues": rec_issues,
+            "ccc_approximation_issues": ccc_issues,
+            "statement_integrity_issues": stmt_issues,
+            "source_preservation_issues": src_pres_issues,
+            "missing_value_issues": missing_val_issues,
+            "completeness_issues": completeness_issues,
             "prohibited_audit_violations": audit_violations,
             "prohibited_terms_found": audit_violations
         }

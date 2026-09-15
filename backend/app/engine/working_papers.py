@@ -329,7 +329,7 @@ def generate_working_paper_lead_schedules(
         if cl.get("tax_payable") is not None:
             prov = find_item_provenance(canonical_items, ["tax payable", "tax provision"], cl.get("tax_payable"))
             lines.append({
-                "account_name": "Statutory Tax Provisions",
+                "account_name": "Income Tax Provisions",
                 "amount": float(cl.get("tax_payable")),
                 "cross_ref": prov["cross_ref"],
                 "source_document": prov["source_document"],

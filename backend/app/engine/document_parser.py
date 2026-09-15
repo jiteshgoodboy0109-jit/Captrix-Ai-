@@ -610,7 +610,7 @@ class ExcelAdapter(DocumentAdapter):
                     text_parts.append(sheet)
                     text_parts.extend([str(c) for c in df.columns if pd.notna(c)])
                     for _, row in df.iloc[:30].iterrows():
-                        text_parts.extend([str(v) for v in row.values if pd.notna(v) and isinstance(v, str)])
+                        text_parts.extend([v for v in row.values if pd.notna(v) and isinstance(v, str)])
                 except Exception:
                     continue
         except Exception:

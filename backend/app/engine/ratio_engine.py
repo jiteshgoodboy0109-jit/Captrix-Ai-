@@ -200,7 +200,7 @@ class RatioEngine:
             "display_value": f"{nwc_rev_val:.1f}%" if nwc_rev_val is not None else "NOT_CALCULABLE",
             "unit": "%",
             "is_calculable": nwc_rev_calc["is_calculable"],
-            "formula": "(Net Working Capital / Revenue) * 100",
+            "formula": "(Current Assets - Current Liabilities) / Revenue",
             "inputs": {
                 "Current Assets": ca,
                 "Current Liabilities": cl,
@@ -388,14 +388,14 @@ class RatioEngine:
             "display_value": f"{de_val:.2f}x" if de_val is not None else "NOT_CALCULABLE",
             "unit": "x",
             "is_calculable": de_calc["is_calculable"],
-            "formula": "Interest-bearing Debt / Equity",
+            "formula": "Interest-Bearing Debt / Shareholders' Equity",
             "inputs": {
                 "Short-Term Debt": st_debt or 0.0,
                 "Long-Term Debt": long_debt or 0.0,
-                "Interest-bearing Debt": debt_for_de,
-                "Equity": equity
+                "Interest-Bearing Debt": debt_for_de,
+                "Shareholders' Equity": equity
             },
-            "definition_used": "Interest-bearing Debt / Equity: Evaluates pure financial borrowing leverage relative to shareholder capital. Excludes non-debt operational liabilities like accounts payable.",
+            "definition_used": "Interest-Bearing Debt / Shareholders' Equity: Evaluates pure financial borrowing leverage relative to shareholder capital. Excludes non-debt operational liabilities like accounts payable.",
             "benchmark": "< 1.5x (Industry benchmark unavailable from the provided data)",
             "status": ("HEALTHY" if de_val <= 1.0 else ("WARNING" if de_val <= 2.0 else "CRITICAL")) if de_val is not None else "NOT_CALCULABLE",
             "interpretation": (f"For every 1.00 of equity capital, the enterprise carries {de_val:.2f} of interest-bearing debt." if de_val is not None else "Not calculable: Shareholders' Equity missing or zero in source schedules."),
@@ -412,12 +412,12 @@ class RatioEngine:
             "display_value": f"{liab_to_eq_val:.2f}x" if liab_to_eq_val is not None else "NOT_CALCULABLE",
             "unit": "x",
             "is_calculable": liab_to_eq_calc["is_calculable"],
-            "formula": "Total Liabilities / Equity",
+            "formula": "Total Liabilities / Shareholders' Equity",
             "inputs": {
                 "Total Liabilities": total_liab,
-                "Equity": equity
+                "Shareholders' Equity": equity
             },
-            "definition_used": "Total Liabilities / Equity: Comprehensive leverage metric including both operating liabilities (payables, accruals) and funded debt.",
+            "definition_used": "Total Liabilities / Shareholders' Equity: Comprehensive leverage metric including both operating liabilities (payables, accruals) and funded debt.",
             "benchmark": "< 2.0x (Industry benchmark unavailable from the provided data)",
             "status": ("HEALTHY" if liab_to_eq_val <= 1.5 else ("WARNING" if liab_to_eq_val <= 2.5 else "CRITICAL")) if liab_to_eq_val is not None else "NOT_CALCULABLE",
             "interpretation": (f"Total liabilities represent {liab_to_eq_val:.2f}x of shareholder equity capital." if liab_to_eq_val is not None else "Not calculable: Total Liabilities or Equity missing in source schedules."),
@@ -501,6 +501,7 @@ class RatioEngine:
             opening_inv = statements.get("opening_inventory")
         closing_inv = inv
 
+        inv_t_calc: Dict[str, Any]
         if opening_inv is not None and closing_inv is not None and (float(opening_inv) + float(closing_inv)) > 0 and cogs is not None and cogs > 0:
             avg_inv = (float(opening_inv) + float(closing_inv)) / 2.0
             inv_t_calc = safe_div(cogs, avg_inv)
@@ -529,7 +530,8 @@ class RatioEngine:
             }
             num_for_check, den_for_check = None, None
 
-        inv_t_val = inv_t_calc["value"]
+        raw_inv_val = inv_t_calc.get("value")
+        inv_t_val: Optional[float] = float(raw_inv_val) if raw_inv_val is not None else None
         efficiency["inventory_turnover"] = {
             "name": "Inventory Turnover",
             "category": "efficiency",
@@ -589,6 +591,147 @@ class RatioEngine:
             "interpretation": (f"Generates {ast_t_val:.2f} of annual revenue per dollar of total asset deployment." if ast_t_val is not None else "Not calculable: Revenue or Total Assets missing in source schedules."),
             "reproducible": verify_ratio_reproducibility(rev, total_assets, ast_t_val)
         }
+
+        all_categories = {
+            "liquidity": liquidity,
+            "profitability": profitability,
+            "solvency": solvency,
+            "efficiency": efficiency
+        }
+
+        # Authoritative Formula Specification mapping
+        RATIO_SPECIFICATION = {
+            "current_ratio": {
+                "formula_definition": "Current Assets / Current Liabilities",
+                "required_inputs": ["Current Assets", "Current Liabilities"],
+                "source_fields": ["Total Current Assets", "Total Current Liabilities"],
+                "units": "x"
+            },
+            "quick_ratio": {
+                "formula_definition": "(Current Assets - Inventory) / Current Liabilities",
+                "required_inputs": ["Current Assets", "Current Liabilities"],
+                "source_fields": ["Total Current Assets", "Inventories", "Total Current Liabilities"],
+                "units": "x"
+            },
+            "cash_ratio": {
+                "formula_definition": "Cash & Cash Equivalents / Current Liabilities",
+                "required_inputs": ["Cash & Cash Equivalents", "Current Liabilities"],
+                "source_fields": ["Cash and Cash Equivalents", "Total Current Liabilities"],
+                "units": "x"
+            },
+            "working_capital_ratio": {
+                "formula_definition": "(Current Assets - Current Liabilities) / Revenue",
+                "required_inputs": ["Current Assets", "Current Liabilities", "Revenue"],
+                "source_fields": ["Total Current Assets", "Total Current Liabilities", "Revenue from Operations"],
+                "units": "%"
+            },
+            "gross_profit_margin": {
+                "formula_definition": "(Gross Profit / Total Revenue) * 100",
+                "required_inputs": ["Gross Profit", "Total Revenue"],
+                "source_fields": ["Gross Profit", "Revenue from Operations"],
+                "units": "%"
+            },
+            "operating_profit_margin": {
+                "formula_definition": "(EBIT / Total Revenue) * 100",
+                "required_inputs": ["EBIT", "Total Revenue"],
+                "source_fields": ["Operating Income (EBIT)", "Revenue from Operations"],
+                "units": "%"
+            },
+            "net_profit_margin": {
+                "formula_definition": "(Net Income / Total Revenue) * 100",
+                "required_inputs": ["Net Income", "Total Revenue"],
+                "source_fields": ["Net Income", "Revenue from Operations"],
+                "units": "%"
+            },
+            "return_on_assets": {
+                "formula_definition": "(Net Income / Total Assets) * 100",
+                "required_inputs": ["Net Income", "Total Assets"],
+                "source_fields": ["Net Income", "Total Assets"],
+                "units": "%"
+            },
+            "return_on_equity": {
+                "formula_definition": "(Net Income / Total Shareholders' Equity) * 100",
+                "required_inputs": ["Net Income", "Total Shareholders' Equity"],
+                "source_fields": ["Net Income", "Total Shareholders Equity"],
+                "units": "%"
+            },
+            "return_on_capital_employed": {
+                "formula_definition": "(EBIT / (Total Assets - Current Liabilities)) * 100",
+                "required_inputs": ["EBIT", "Capital Employed"],
+                "source_fields": ["Operating Income (EBIT)", "Total Assets", "Total Current Liabilities"],
+                "units": "%"
+            },
+            "debt_to_equity": {
+                "formula_definition": "Interest-Bearing Debt / Shareholders' Equity",
+                "required_inputs": ["Interest-Bearing Debt", "Shareholders' Equity"],
+                "source_fields": ["Short-Term Borrowings", "Long-Term Debt", "Total Shareholders Equity"],
+                "units": "x"
+            },
+            "liabilities_to_equity": {
+                "formula_definition": "Total Liabilities / Shareholders' Equity",
+                "required_inputs": ["Total Liabilities", "Shareholders' Equity"],
+                "source_fields": ["Total Liabilities", "Total Shareholders Equity"],
+                "units": "x"
+            },
+            "debt_ratio": {
+                "formula_definition": "(Total Liabilities / Total Assets) * 100",
+                "required_inputs": ["Total Liabilities", "Total Assets"],
+                "source_fields": ["Total Liabilities", "Total Assets"],
+                "units": "%"
+            },
+            "equity_ratio": {
+                "formula_definition": "(Total Shareholders' Equity / Total Assets) * 100",
+                "required_inputs": ["Total Shareholders' Equity", "Total Assets"],
+                "source_fields": ["Total Shareholders Equity", "Total Assets"],
+                "units": "%"
+            },
+            "interest_coverage_ratio": {
+                "formula_definition": "EBIT / Interest Expense",
+                "required_inputs": ["EBIT", "Interest Expense"],
+                "source_fields": ["Operating Income (EBIT)", "Interest Expense"],
+                "units": "x"
+            },
+            "inventory_turnover": {
+                "formula_definition": "COGS / ((Opening Inventory + Closing Inventory) / 2)",
+                "required_inputs": ["COGS", "Opening Inventory", "Closing Inventory"],
+                "source_fields": ["Cost of Goods Sold", "Inventories"],
+                "units": "times"
+            },
+            "receivable_turnover": {
+                "formula_definition": "Total Revenue / Accounts Receivable",
+                "required_inputs": ["Total Revenue", "Accounts Receivable"],
+                "source_fields": ["Revenue from Operations", "Accounts Receivable"],
+                "units": "times"
+            },
+            "asset_turnover": {
+                "formula_definition": "Total Revenue / Total Assets",
+                "required_inputs": ["Total Revenue", "Total Assets"],
+                "source_fields": ["Revenue from Operations", "Total Assets"],
+                "units": "times"
+            }
+        }
+
+        # Enrich and guarantee standard formula attributes on every single ratio
+        for cat_name, cat_dict in all_categories.items():
+            if isinstance(cat_dict, dict):
+                for r_key, r_obj in cat_dict.items():
+                    if isinstance(r_obj, dict):
+                        spec = RATIO_SPECIFICATION.get(r_key, {})
+                        r_obj["formula_definition"] = spec.get("formula_definition", r_obj.get("formula", ""))
+                        r_obj["required_inputs"] = spec.get("required_inputs", list(r_obj.get("inputs", {}).keys()))
+                        r_obj["calculated_value"] = r_obj.get("value")
+                        r_obj["units"] = spec.get("units", r_obj.get("unit", ""))
+                        r_obj["source_fields"] = spec.get("source_fields", list(r_obj.get("inputs", {}).keys()))
+                        
+                        # Authoritative calculation status
+                        if r_obj.get("is_calculable") and r_obj.get("value") is not None:
+                            r_obj["calculation_status"] = "CALCULATED"
+                        elif any(r_obj.get("inputs", {}).get(k) is None for k in r_obj["required_inputs"] if k not in ["Opening Inventory", "Closing Inventory"]):
+                            r_obj["calculation_status"] = "INPUTS_MISSING"
+                        else:
+                            r_obj["calculation_status"] = "NOT_CALCULABLE"
+                            
+                        r_obj["explanation"] = r_obj.get("interpretation", "")
 
         return {
             "liquidity": liquidity,

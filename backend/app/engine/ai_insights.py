@@ -189,7 +189,7 @@ def generate_ai_insights(statements: Dict[str, Any], ratios: Dict[str, Any], cor
         recommendations.append({
             "priority": "MEDIUM (3-6 Months)",
             "title": "Structured Debt Deleveraging",
-            "action": f"Reduce total debt-to-equity leverage from {de:.2f}x to below 1.5x to lower debt service vulnerability."
+            "action": f"Reduce interest-bearing debt-to-equity leverage from {de:.2f}x to below 1.5x to lower debt service vulnerability."
         })
     else:
         np_margin_str = f"{np_margin:.1f}%" if np_margin is not None else "N/A"
